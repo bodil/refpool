@@ -41,7 +41,7 @@ impl<A> PoolRef<A> {
     ///
     /// [new]: #method.new
     /// [default_uninit]: trait.PoolDefault.html#tymethod.default_uninit
-    pub fn default(pool: &mut Pool<A>) -> Self
+    pub fn default(pool: &Pool<A>) -> Self
     where
         A: PoolDefault,
     {
@@ -61,7 +61,7 @@ impl<A> PoolRef<A> {
     /// construct the default value.
     ///
     /// [default]: #method.default
-    pub fn new(pool: &mut Pool<A>, value: A) -> Self {
+    pub fn new(pool: &Pool<A>, value: A) -> Self {
         let mut handle = pool.pop();
         unsafe {
             data_ptr(&mut handle).as_mut_ptr().write(value);
@@ -88,7 +88,7 @@ impl<A> PoolRef<A> {
     /// let ref1 = PoolRef::clone_from(&mut pool, &vec);
     /// assert_eq!(vec, *ref1);
     /// ```
-    pub fn clone_from(pool: &mut Pool<A>, value: &A) -> Self
+    pub fn clone_from(pool: &Pool<A>, value: &A) -> Self
     where
         A: PoolClone,
     {
@@ -103,7 +103,7 @@ impl<A> PoolRef<A> {
     /// Construct a [`Pin`][Pin]ned `PoolRef` with a default value.
     ///
     /// [Pin]: https://doc.rust-lang.org/std/pin/struct.Pin.html
-    pub fn pin_default(pool: &mut Pool<A>) -> Pin<Self>
+    pub fn pin_default(pool: &Pool<A>) -> Pin<Self>
     where
         A: PoolDefault,
     {
@@ -113,7 +113,7 @@ impl<A> PoolRef<A> {
     /// Construct a [`Pin`][Pin]ned `PoolRef` with the given value.
     ///
     /// [Pin]: https://doc.rust-lang.org/std/pin/struct.Pin.html
-    pub fn pin(pool: &mut Pool<A>, value: A) -> Pin<Self> {
+    pub fn pin(pool: &Pool<A>, value: A) -> Pin<Self> {
         unsafe { Pin::new_unchecked(Self::new(pool, value)) }
     }
 
@@ -125,7 +125,7 @@ impl<A> PoolRef<A> {
     ///
     /// [new]: #method.new
     /// [clone_uninit]: trait.PoolClone.html#tymethod.clone_uninit
-    pub fn cloned(&self, pool: &mut Pool<A>) -> Self
+    pub fn cloned(&self, pool: &Pool<A>) -> Self
     where
         A: PoolClone,
     {
@@ -151,7 +151,7 @@ impl<A> PoolRef<A> {
     /// assert_eq!(1, *ref1);
     /// assert_eq!(2, *ref2);
     /// ```
-    pub fn make_mut<'a>(pool: &mut Pool<A>, this: &'a mut Self) -> &'a mut A
+    pub fn make_mut<'a>(pool: &Pool<A>, this: &'a mut Self) -> &'a mut A
     where
         A: PoolClone,
     {
@@ -379,7 +379,7 @@ impl<A> Pointer for PoolRef<A> {
 
 pub(crate) struct RefBox<A> {
     pub(crate) count: usize,
-    pub(crate) pool: *mut Pool<A>,
+    pub(crate) pool: Pool<A>,
     pub(crate) value: A,
 }
 
@@ -396,11 +396,12 @@ impl<A> RefBox<A> {
     }
 
     fn return_to_pool(self: Box<Self>) {
-        let pool = unsafe { &mut *self.pool };
-        if !pool.is_full() {
+        if !self.pool.is_full() {
             let ptr = Box::into_raw(self);
-            unsafe { ptr.drop_in_place() };
-            pool.push(ptr);
+            unsafe {
+                ((*ptr).pool).push(ptr);
+                ptr.drop_in_place();
+            };
         }
     }
 

@@ -14,15 +14,15 @@ type TestType = usize;
 
 #[bench]
 fn alloc_131072_with_pool(b: &mut Bencher) {
-    let mut pool = Pool::<TestType>::new(131_072);
+    let pool = Pool::<TestType>::new(131_072);
     let mut vec: Vec<PoolRef<TestType>> = Vec::with_capacity(131_072);
     for _ in 0..131_072 {
-        vec.push(PoolRef::default(&mut pool));
+        vec.push(PoolRef::default(&pool));
     }
     vec.clear();
     b.iter(|| {
         for _ in 0..131_072 {
-            vec.push(PoolRef::default(&mut pool));
+            vec.push(PoolRef::default(&pool));
         }
         vec.clear();
     })
@@ -41,14 +41,14 @@ fn alloc_131072_without_pool(b: &mut Bencher) {
 
 #[bench]
 fn alloc_dealloc_131072_with_pool(b: &mut Bencher) {
-    let mut pool = Pool::<TestType>::new(131_072);
+    let pool = Pool::<TestType>::new(131_072);
     {
-        let chunk: PoolRef<TestType> = PoolRef::default(&mut pool);
+        let chunk: PoolRef<TestType> = PoolRef::default(&pool);
         test::black_box(chunk);
     }
     b.iter(|| {
         for _ in 0..131_072 {
-            let chunk: PoolRef<TestType> = PoolRef::default(&mut pool);
+            let chunk: PoolRef<TestType> = PoolRef::default(&pool);
             test::black_box(chunk);
         }
     })

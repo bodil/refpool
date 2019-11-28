@@ -174,46 +174,106 @@ impl<A> Stack<A> {
 /// [PoolRef::new]: struct.PoolRef.html#method.new
 /// [PoolRef::default]: struct.PoolRef.html#method.default
 pub struct Pool<A> {
-    max_size: usize,
-    stack: Stack<RefBox<A>>,
+    inner: *mut PoolInner<A>,
 }
 
 impl<A> Pool<A> {
     /// Construct a new pool with a given max size.
     pub fn new(max_size: usize) -> Self {
+        Box::new(PoolInner::new(max_size)).into_ref()
+    }
+
+    fn push(&self, value: *mut RefBox<A>) {
+        unsafe { (*self.inner).push(value) }
+    }
+
+    fn pop(&self) -> Box<MaybeUninit<RefBox<A>>> {
+        unsafe { (*self.inner).pop() }
+    }
+
+    fn deref(&self) -> &PoolInner<A> {
+        unsafe { &*self.inner }
+    }
+
+    /// Get the maximum size of the pool.
+    pub fn get_max_size(&self) -> usize {
+        self.deref().get_max_size()
+    }
+
+    /// Get the current size of the pool.
+    pub fn get_pool_size(&self) -> usize {
+        self.deref().get_pool_size()
+    }
+
+    /// Test if the pool is currently full.
+    pub fn is_full(&self) -> bool {
+        self.get_pool_size() >= self.get_max_size()
+    }
+}
+
+impl<A> Clone for Pool<A> {
+    fn clone(&self) -> Self {
+        unsafe { (*self.inner).make_ref() }
+    }
+}
+
+impl<A> Drop for Pool<A> {
+    fn drop(&mut self) {
+        if unsafe { (*self.inner).dec() } == 0 {
+            std::mem::drop(unsafe { Box::from_raw(self.inner) });
+        }
+    }
+}
+
+struct PoolInner<A> {
+    count: usize,
+    max_size: usize,
+    stack: Stack<RefBox<A>>,
+}
+
+impl<A> PoolInner<A> {
+    fn new(max_size: usize) -> Self {
         Self {
+            count: 0,
             max_size,
             stack: Stack::new(max_size),
         }
     }
 
+    fn into_ref(mut self: Box<Self>) -> Pool<A> {
+        self.inc();
+        Pool {
+            inner: Box::into_raw(self),
+        }
+    }
+
+    fn make_ref(&mut self) -> Pool<A> {
+        self.inc();
+        Pool { inner: self }
+    }
+
     /// Get the maximum size of the pool.
-    pub fn get_max_size(&self) -> usize {
+    fn get_max_size(&self) -> usize {
         self.max_size
     }
 
-    /// Set a new max size for the pool.
-    ///
-    /// This will not reduce the size of the pool if you set it to a lower
-    /// number than its current size, but it will prevent it from growing while
-    /// the pool size exceeds the new max size.
-    pub fn set_max_size(&mut self, max_size: usize) {
-        self.max_size = max_size;
-    }
-
     /// Get the current size of the pool.
-    pub fn get_pool_size(&self) -> usize {
+    fn get_pool_size(&self) -> usize {
         self.stack.len()
     }
 
-    /// Test if the pool is currently full.
-    pub fn is_full(&self) -> bool {
-        self.get_pool_size() >= self.max_size
+    fn inc(&mut self) {
+        self.count += 1;
     }
 
-    unsafe fn init_box(ref_box: *mut RefBox<A>, pool: *mut Pool<A>) {
+    fn dec(&mut self) -> usize {
+        self.count -= 1;
+        self.count
+    }
+
+    unsafe fn init_box(ref_box: *mut RefBox<A>, pool: Pool<A>) {
         let count_ptr: *mut usize = &mut (*(ref_box)).count;
-        let pool_ptr: *mut *mut Pool<A> = &mut (*(ref_box)).pool;
+        let pool_ptr: *mut Pool<A> = &mut (*(ref_box)).pool;
         count_ptr.write(0);
         pool_ptr.write(pool);
     }
@@ -223,12 +283,12 @@ impl<A> Pool<A> {
             let box_ptr = value_ptr.cast::<MaybeUninit<RefBox<A>>>();
             unsafe {
                 let obj = box_ptr.as_mut().unwrap().as_mut_ptr();
-                Self::init_box(obj, self);
+                Self::init_box(obj, self.make_ref());
                 Box::from_raw(box_ptr)
             }
         } else {
             let mut obj: Box<MaybeUninit<RefBox<A>>> = Box::new(MaybeUninit::uninit());
-            unsafe { Self::init_box(obj.as_mut_ptr(), self) };
+            unsafe { Self::init_box(obj.as_mut_ptr(), self.make_ref()) };
             obj
         }
     }
@@ -244,17 +304,17 @@ mod test {
 
     #[test]
     fn allocate_and_deallocate_a_bit() {
-        let mut pool = Pool::new(1024);
+        let pool = Pool::new(1024);
         assert_eq!(0, pool.get_pool_size());
         let mut refs: Vec<PoolRef<usize>> = Vec::new();
         for _ in 0..10000 {
-            refs.push(PoolRef::default(&mut pool));
+            refs.push(PoolRef::default(&pool));
         }
         assert_eq!(0, pool.get_pool_size());
         refs.clear();
         assert_eq!(1024, pool.get_pool_size());
         for _ in 0..10000 {
-            refs.push(PoolRef::default(&mut pool));
+            refs.push(PoolRef::default(&pool));
         }
         assert_eq!(0, pool.get_pool_size());
         let mut refs2 = refs.clone();
