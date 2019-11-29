@@ -4,12 +4,15 @@
 
 use std::borrow::Borrow;
 use std::cmp::Ordering;
-use std::fmt::{Debug, Display, Error, Formatter, Pointer};
+use std::fmt::{Debug, Display, Error, Formatter};
 use std::hash::{Hash, Hasher};
 use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::pin::Pin;
 
+use crate::counter::Counter;
+use crate::pointer::Pointer;
+use crate::sync_type::PoolSyncType;
 use crate::{Pool, PoolClone, PoolDefault};
 
 unsafe fn assume_init<A>(maybe_boxed: Box<MaybeUninit<A>>) -> Box<A> {
@@ -18,7 +21,10 @@ unsafe fn assume_init<A>(maybe_boxed: Box<MaybeUninit<A>>) -> Box<A> {
     // feature stabilises.
 }
 
-unsafe fn data_ptr<A>(this: &mut MaybeUninit<RefBox<A>>) -> &mut MaybeUninit<A> {
+unsafe fn data_ptr<A, S>(this: &mut MaybeUninit<RefBox<A, S>>) -> &mut MaybeUninit<A>
+where
+    S: PoolSyncType<A>,
+{
     (*this.as_mut_ptr())
         .value_as_mut_ptr()
         .cast::<MaybeUninit<A>>()
@@ -27,11 +33,17 @@ unsafe fn data_ptr<A>(this: &mut MaybeUninit<RefBox<A>>) -> &mut MaybeUninit<A> 
 }
 
 /// A reference counted pointer to `A`.
-pub struct PoolRef<A> {
-    pub(crate) handle: *mut RefBox<A>,
+pub struct PoolRef<A, S>
+where
+    S: PoolSyncType<A>,
+{
+    pub(crate) handle: S::ElementPointer,
 }
 
-impl<A> PoolRef<A> {
+impl<A, S> PoolRef<A, S>
+where
+    S: PoolSyncType<A>,
+{
     /// Construct a `PoolRef` with a newly initialised value of `A`.
     ///
     /// This uses [`PoolDefault::default_uninit()`][default_uninit] to initialise a
@@ -41,7 +53,7 @@ impl<A> PoolRef<A> {
     ///
     /// [new]: #method.new
     /// [default_uninit]: trait.PoolDefault.html#tymethod.default_uninit
-    pub fn default(pool: &Pool<A>) -> Self
+    pub fn default(pool: &Pool<A, S>) -> Self
     where
         A: PoolDefault,
     {
@@ -61,7 +73,7 @@ impl<A> PoolRef<A> {
     /// construct the default value.
     ///
     /// [default]: #method.default
-    pub fn new(pool: &Pool<A>, value: A) -> Self {
+    pub fn new(pool: &Pool<A, S>, value: A) -> Self {
         let mut handle = pool.pop();
         unsafe {
             data_ptr(&mut handle).as_mut_ptr().write(value);
@@ -88,7 +100,7 @@ impl<A> PoolRef<A> {
     /// let ref1 = PoolRef::clone_from(&mut pool, &vec);
     /// assert_eq!(vec, *ref1);
     /// ```
-    pub fn clone_from(pool: &Pool<A>, value: &A) -> Self
+    pub fn clone_from(pool: &Pool<A, S>, value: &A) -> Self
     where
         A: PoolClone,
     {
@@ -103,7 +115,7 @@ impl<A> PoolRef<A> {
     /// Construct a [`Pin`][Pin]ned `PoolRef` with a default value.
     ///
     /// [Pin]: https://doc.rust-lang.org/std/pin/struct.Pin.html
-    pub fn pin_default(pool: &Pool<A>) -> Pin<Self>
+    pub fn pin_default(pool: &Pool<A, S>) -> Pin<Self>
     where
         A: PoolDefault,
     {
@@ -113,7 +125,7 @@ impl<A> PoolRef<A> {
     /// Construct a [`Pin`][Pin]ned `PoolRef` with the given value.
     ///
     /// [Pin]: https://doc.rust-lang.org/std/pin/struct.Pin.html
-    pub fn pin(pool: &Pool<A>, value: A) -> Pin<Self> {
+    pub fn pin(pool: &Pool<A, S>, value: A) -> Pin<Self> {
         unsafe { Pin::new_unchecked(Self::new(pool, value)) }
     }
 
@@ -125,7 +137,7 @@ impl<A> PoolRef<A> {
     ///
     /// [new]: #method.new
     /// [clone_uninit]: trait.PoolClone.html#tymethod.clone_uninit
-    pub fn cloned(&self, pool: &Pool<A>) -> Self
+    pub fn cloned(&self, pool: &Pool<A, S>) -> Self
     where
         A: PoolClone,
     {
@@ -151,7 +163,7 @@ impl<A> PoolRef<A> {
     /// assert_eq!(1, *ref1);
     /// assert_eq!(2, *ref2);
     /// ```
-    pub fn make_mut<'a>(pool: &Pool<A>, this: &'a mut Self) -> &'a mut A
+    pub fn make_mut<'a>(pool: &Pool<A, S>, this: &'a mut Self) -> &'a mut A
     where
         A: PoolClone,
     {
@@ -163,7 +175,7 @@ impl<A> PoolRef<A> {
             };
             new_handle.inc();
             this.box_ref_mut().dec();
-            this.handle = Box::into_raw(new_handle);
+            this.handle = S::ElementPointer::wrap(Box::into_raw(new_handle));
         }
         this.box_ref_mut().value_as_mut()
     }
@@ -214,8 +226,8 @@ impl<A> PoolRef<A> {
         if this.box_ref().is_shared() {
             Err(this)
         } else {
-            let handle = unsafe { Box::from_raw(this.handle) };
-            this.handle = std::ptr::null_mut();
+            let handle = unsafe { Box::from_raw(this.handle.get_ptr()) };
+            this.handle = S::ElementPointer::wrap(std::ptr::null_mut());
             Ok(handle.value)
         }
     }
@@ -235,8 +247,8 @@ impl<A> PoolRef<A> {
         if this.box_ref().is_shared() {
             this.deref().clone()
         } else {
-            let handle = unsafe { Box::from_raw(this.handle) };
-            this.handle = std::ptr::null_mut();
+            let handle = unsafe { Box::from_raw(this.handle.get_ptr()) };
+            this.handle = S::ElementPointer::wrap(std::ptr::null_mut());
             handle.value
         }
     }
@@ -253,153 +265,187 @@ impl<A> PoolRef<A> {
     /// assert!(PoolRef::ptr_eq(&ref1, &ref2));
     /// ```
     pub fn ptr_eq(left: &Self, right: &Self) -> bool {
-        std::ptr::eq(left.handle, right.handle)
+        std::ptr::eq(left.handle.get_ptr(), right.handle.get_ptr())
     }
 
     /// Get the current number of `LocalRef` references to the wrapped value.
     pub fn strong_count(this: &Self) -> usize {
-        let handle = unsafe { &mut (*this.handle) };
-        handle.count
+        this.box_ref().count.count()
     }
 
-    fn box_ref(&self) -> &RefBox<A> {
-        unsafe { &*self.handle }
+    fn box_ref(&self) -> &RefBox<A, S> {
+        unsafe { &*self.handle.get_ptr() }
     }
 
-    fn box_ref_mut(&mut self) -> &mut RefBox<A> {
-        unsafe { &mut *self.handle }
+    fn box_ref_mut(&mut self) -> &mut RefBox<A, S> {
+        unsafe { &mut *self.handle.get_ptr() }
     }
 }
 
-impl<A> Drop for PoolRef<A> {
+impl<A, S> Drop for PoolRef<A, S>
+where
+    S: PoolSyncType<A>,
+{
     fn drop(&mut self) {
-        if self.handle.is_null() {
+        if self.handle.get_ptr().is_null() {
             return;
         }
-        if self.box_ref_mut().dec() > 0 {
+        if self.box_ref_mut().dec() != 1 {
             return;
         }
-        let handle = unsafe { Box::from_raw(self.handle) };
+        let handle = unsafe { Box::from_raw(self.handle.get_ptr()) };
         handle.return_to_pool();
     }
 }
 
-impl<A> Clone for PoolRef<A> {
+impl<A, S> Clone for PoolRef<A, S>
+where
+    S: PoolSyncType<A>,
+{
     fn clone(&self) -> Self {
-        let mut new_ref = PoolRef {
-            handle: self.handle,
+        let mut new_ref: Self = PoolRef {
+            handle: S::ElementPointer::wrap(self.handle.get_ptr()),
         };
         new_ref.box_ref_mut().inc();
         new_ref
     }
 }
 
-impl<A> Deref for PoolRef<A> {
+impl<A, S> Deref for PoolRef<A, S>
+where
+    S: PoolSyncType<A>,
+{
     type Target = A;
     fn deref(&self) -> &Self::Target {
         self.box_ref().value_as_ref()
     }
 }
 
-impl<A> AsRef<A> for PoolRef<A> {
+impl<A, S> AsRef<A> for PoolRef<A, S>
+where
+    S: PoolSyncType<A>,
+{
     fn as_ref(&self) -> &A {
         self.deref()
     }
 }
 
-impl<A> Borrow<A> for PoolRef<A> {
+impl<A, S> Borrow<A> for PoolRef<A, S>
+where
+    S: PoolSyncType<A>,
+{
     fn borrow(&self) -> &A {
         self.deref()
     }
 }
 
-impl<A> PartialEq for PoolRef<A>
+impl<A, S> PartialEq for PoolRef<A, S>
 where
     A: PartialEq,
+    S: PoolSyncType<A>,
 {
     fn eq(&self, other: &Self) -> bool {
         (**self) == (**other)
     }
 }
 
-impl<A> Eq for PoolRef<A> where A: Eq {}
+impl<A, S> Eq for PoolRef<A, S>
+where
+    A: Eq,
+    S: PoolSyncType<A>,
+{
+}
 
-impl<A> PartialOrd for PoolRef<A>
+impl<A, S> PartialOrd for PoolRef<A, S>
 where
     A: PartialOrd,
+    S: PoolSyncType<A>,
 {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         (**self).partial_cmp(&**other)
     }
 }
 
-impl<A> Ord for PoolRef<A>
+impl<A, S> Ord for PoolRef<A, S>
 where
     A: Ord,
+    S: PoolSyncType<A>,
 {
     fn cmp(&self, other: &Self) -> Ordering {
         (**self).cmp(&**other)
     }
 }
 
-impl<A> Hash for PoolRef<A>
+impl<A, S> Hash for PoolRef<A, S>
 where
     A: Hash,
+    S: PoolSyncType<A>,
 {
     fn hash<H: Hasher>(&self, hasher: &mut H) {
         (**self).hash(hasher)
     }
 }
 
-impl<A> Display for PoolRef<A>
+impl<A, S> Display for PoolRef<A, S>
 where
     A: Display,
+    S: PoolSyncType<A>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         (**self).fmt(f)
     }
 }
 
-impl<A> Debug for PoolRef<A>
+impl<A, S> Debug for PoolRef<A, S>
 where
     A: Debug,
+    S: PoolSyncType<A>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         (**self).fmt(f)
     }
 }
 
-impl<A> Pointer for PoolRef<A> {
+impl<A, S> std::fmt::Pointer for PoolRef<A, S>
+where
+    S: PoolSyncType<A>,
+{
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        Pointer::fmt(&(&**self as *const A), f)
+        std::fmt::Pointer::fmt(&(&**self as *const A), f)
     }
 }
 
 // RefBox
 
-pub(crate) struct RefBox<A> {
-    pub(crate) count: usize,
-    pub(crate) pool: Pool<A>,
+#[doc(hidden)]
+pub struct RefBox<A, S>
+where
+    S: PoolSyncType<A>,
+{
+    pub(crate) count: S::Counter,
+    pub(crate) pool: Pool<A, S>,
     pub(crate) value: A,
 }
 
-impl<A> RefBox<A> {
-    fn into_ref(mut self: Box<Self>) -> PoolRef<A> {
+impl<A, S: PoolSyncType<A>> RefBox<A, S> {
+    fn into_ref(mut self: Box<Self>) -> PoolRef<A, S> {
         let ref_handle = self.new_ref();
         Box::leak(self);
         ref_handle
     }
 
-    fn new_ref(&mut self) -> PoolRef<A> {
-        self.count += 1;
-        PoolRef { handle: self }
+    fn new_ref(&mut self) -> PoolRef<A, S> {
+        self.inc();
+        PoolRef {
+            handle: S::ElementPointer::wrap(self),
+        }
     }
 
     fn return_to_pool(self: Box<Self>) {
         if !self.pool.is_full() {
             let ptr = Box::into_raw(self);
             unsafe {
-                ((*ptr).pool).push(ptr);
+                ((*ptr).pool).push(S::ElementPointer::wrap(ptr));
                 ptr.drop_in_place();
             };
         }
@@ -417,16 +463,18 @@ impl<A> RefBox<A> {
         &mut self.value
     }
 
+    #[inline(always)]
     fn inc(&mut self) {
-        self.count += 1;
+        self.count.inc()
     }
 
+    #[inline(always)]
     fn dec(&mut self) -> usize {
-        self.count -= 1;
-        self.count
+        self.count.dec()
     }
 
+    #[inline(always)]
     fn is_shared(&self) -> bool {
-        self.count > 1
+        self.count.count() > 1
     }
 }

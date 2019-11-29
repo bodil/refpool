@@ -6,16 +6,21 @@
 
 extern crate test;
 
-use refpool::{Pool, PoolRef};
+use refpool::{Pool, PoolRef, PoolSyncType, PoolUnsync};
 use std::rc::Rc;
 use test::Bencher;
 
+#[cfg(feature = "sync")]
+use std::sync::Arc;
+
+#[cfg(feature = "sync")]
+use refpool::PoolSync;
+
 type TestType = usize;
 
-#[bench]
-fn alloc_131072_with_pool(b: &mut Bencher) {
-    let pool = Pool::<TestType>::new(131_072);
-    let mut vec: Vec<PoolRef<TestType>> = Vec::with_capacity(131_072);
+fn alloc_131072_with_pool<S: PoolSyncType<TestType>>(b: &mut Bencher) {
+    let pool = Pool::<TestType, S>::new(131_072);
+    let mut vec: Vec<_> = Vec::with_capacity(131_072);
     for _ in 0..131_072 {
         vec.push(PoolRef::default(&pool));
     }
@@ -28,9 +33,8 @@ fn alloc_131072_with_pool(b: &mut Bencher) {
     })
 }
 
-#[bench]
-fn alloc_131072_without_pool(b: &mut Bencher) {
-    let mut vec: Vec<Rc<TestType>> = Vec::with_capacity(131_072);
+fn alloc_131072_without_pool<Ref: Default>(b: &mut Bencher) {
+    let mut vec: Vec<Ref> = Vec::with_capacity(131_072);
     b.iter(|| {
         for _ in 0..131_072 {
             vec.push(Default::default());
@@ -39,27 +43,69 @@ fn alloc_131072_without_pool(b: &mut Bencher) {
     })
 }
 
-#[bench]
-fn alloc_dealloc_131072_with_pool(b: &mut Bencher) {
-    let pool = Pool::<TestType>::new(131_072);
+fn alloc_dealloc_131072_with_pool<S: PoolSyncType<TestType>>(b: &mut Bencher) {
+    let pool = Pool::<TestType, S>::new(131_072);
     {
-        let chunk: PoolRef<TestType> = PoolRef::default(&pool);
+        let chunk = PoolRef::default(&pool);
         test::black_box(chunk);
     }
     b.iter(|| {
         for _ in 0..131_072 {
-            let chunk: PoolRef<TestType> = PoolRef::default(&pool);
+            let chunk = PoolRef::default(&pool);
+            test::black_box(chunk);
+        }
+    })
+}
+
+fn alloc_dealloc_131072_without_pool<Ref: Default>(b: &mut Bencher) {
+    b.iter(|| {
+        for _ in 0..131_072 {
+            let chunk: Ref = Default::default();
             test::black_box(chunk);
         }
     })
 }
 
 #[bench]
-fn alloc_dealloc_131072_without_pool(b: &mut Bencher) {
-    b.iter(|| {
-        for _ in 0..131_072 {
-            let chunk: Rc<TestType> = Default::default();
-            test::black_box(chunk);
-        }
-    })
+fn alloc_131072_with_unsync_pool(b: &mut Bencher) {
+    alloc_131072_with_pool::<PoolUnsync>(b)
+}
+
+#[bench]
+fn alloc_131072_without_unsync_pool(b: &mut Bencher) {
+    alloc_131072_without_pool::<Rc<TestType>>(b)
+}
+
+#[bench]
+fn alloc_dealloc_131072_with_unsync_pool(b: &mut Bencher) {
+    alloc_dealloc_131072_with_pool::<PoolUnsync>(b)
+}
+
+#[bench]
+fn alloc_dealloc_131072_without_unsync_pool(b: &mut Bencher) {
+    alloc_dealloc_131072_without_pool::<Rc<TestType>>(b)
+}
+
+#[cfg(feature = "sync")]
+#[bench]
+fn alloc_131072_with_sync_pool(b: &mut Bencher) {
+    alloc_131072_with_pool::<PoolSync>(b)
+}
+
+#[cfg(feature = "sync")]
+#[bench]
+fn alloc_131072_without_sync_pool(b: &mut Bencher) {
+    alloc_131072_without_pool::<Arc<TestType>>(b)
+}
+
+#[cfg(feature = "sync")]
+#[bench]
+fn alloc_dealloc_131072_with_sync_pool(b: &mut Bencher) {
+    alloc_dealloc_131072_with_pool::<PoolSync>(b)
+}
+
+#[cfg(feature = "sync")]
+#[bench]
+fn alloc_dealloc_131072_without_sync_pool(b: &mut Bencher) {
+    alloc_dealloc_131072_without_pool::<Arc<TestType>>(b)
 }

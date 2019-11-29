@@ -41,7 +41,7 @@
 //! last [`PoolRef`][PoolRef] referencing the value is dropped, its allocated
 //! memory is returned to the pool.
 //!
-//! # Differences from [`Rc`][Rc]
+//! # Differences from [`Rc`][Rc] and [`Arc`][Arc]
 //!
 //! [`PoolRef`][PoolRef] is API compatible with [`Rc`][Rc], with the following
 //! exceptions:
@@ -58,6 +58,39 @@
 //!     [`PoolRef::default(pool)`][PoolRef::default].
 //!   * There's currently no equivalent to [`Weak`][Weak].
 //!   * Experimental APIs are not implemented.
+//!
+//! # Thread Safety
+//!
+//! [`Pool`][Pool] defaults to being thread local by default, ie. it does not
+//! implement [`Sync`][Sync] and it will fail in appalling ways if you still
+//! somehow manage to access it from two different threads. There's a marker
+//! type [`PoolSync`][PoolSync], available behind the `sync` feature flag, which
+//! you can pass as a second type argument to [`Pool`][Pool] and
+//! [`PoolRef`][PoolRef], for a thread safe version. However, this will be much
+//! less performant, on some platforms even failing to outperform the system
+//! allocator by a significant margin. It's not recommended that you use pools
+//! for thread safe code unless your benchmarks actually show that you gain from
+//! doing so.
+//!
+//! There are also type aliases for the thread safe version available in the
+//! `refpool::sync` namespace, if you have the `sync` feature flag enabled:
+//! `refpool::sync::Pool<A>` and `refpool::sync::PoolRef<A>`.
+//!
+//! # Performance
+//!
+//! You can expect [`Pool`][Pool] to always outperform the system allocator,
+//! though the performance gains will vary between platforms. Preliminary
+//! benchmarks show it's approximately twice as fast on Linux, and 5-6 times as
+//! fast on Windows. The [`PoolSync`][PoolSync] version is marginally faster on
+//! Windows, but about 3 times slower on Linux, hence the recommendation above
+//! that you don't use it without benchmarks to back your use case.
+//!
+//! You can expect bigger performance gains from data types with beneficial
+//! [`PoolDefault`][PoolDefault] and [`PoolClone`][PoolClone] implementations,
+//! "beneficial" in this case meaning cases where you can leave most of the
+//! allocated memory unitialised. [`sized_chunks::Chunk`][Chunk], which
+//! allocates 528 bytes on 64-bit platforms but only needs to initialise 16
+//! bytes for [`PoolDefault`][PoolDefault], would be a good example of this.
 
 //! # Example
 //!
@@ -93,22 +126,63 @@
 //! [PoolDefault]: trait.PoolDefault.html
 //! [PoolClone]: trait.PoolClone.html
 //! [PoolDefaultImpl]: trait.PoolDefaultImpl.html
+//! [PoolSync]: struct.PoolSync.html
 //! [Default]: https://doc.rust-lang.org/std/default/trait.Default.html
 //! [Clone]: https://doc.rust-lang.org/std/clone/trait.Clone.html
+//! [Arc]: https://doc.rust-lang.org/std/sync/struct.Arc.html
 //! [Rc]: https://doc.rust-lang.org/std/rc/struct.Rc.html
 //! [Rc::new]: https://doc.rust-lang.org/std/rc/struct.Rc.html#method.new
 //! [Weak]: https://doc.rust-lang.org/std/rc/struct.Weak.html
 //! [Sized]: https://doc.rust-lang.org/std/marker/trait.Sized.html
+//! [Sync]: https://doc.rust-lang.org/std/marker/trait.Sync.html
+//! [Chunk]: https://docs.rs/sized-chunks/*/sized_chunks/sized_chunk/struct.Chunk.html
 
 use std::mem::MaybeUninit;
 
+mod counter;
 mod handle;
-pub use self::handle::PoolRef;
-
-use self::handle::RefBox;
-
+mod pointer;
+mod pool;
+mod stack;
 mod std_types;
+mod sync_type;
+
+pub use self::handle::PoolRef;
+pub use self::pool::Pool;
 pub use self::std_types::PoolDefaultImpl;
+pub use self::sync_type::{PoolSyncType, PoolUnsync};
+
+#[cfg(feature = "sync")]
+pub use self::sync_type::PoolSync;
+
+/// Type aliases for thread safe pools.
+#[cfg(feature = "sync")]
+pub mod sync {
+    use crate::sync_type::PoolSync;
+
+    /// A thread safe pool type.
+    pub type Pool<A> = crate::Pool<A, PoolSync>;
+    /// A thread safe reference counter type.
+    ///
+    /// This is the pooled equivalent to [`std::sync::Arc`][Arc].
+    ///
+    /// [Arc]: https://doc.rust-lang.org/std/sync/struct.Arc.html
+    pub type PoolRef<A> = crate::PoolRef<A, PoolSync>;
+}
+
+/// Type aliases for non-thread safe pools.
+pub mod unsync {
+    use crate::sync_type::PoolUnsync;
+
+    /// A non-thread safe pool type.
+    pub type Pool<A> = crate::Pool<A, PoolUnsync>;
+    /// A non-thread safe reference counter type.
+    ///
+    /// This is the pooled equivalent to [`std::rc::Rc`][Rc].
+    ///
+    /// [Rc]: https://doc.rust-lang.org/std/rc/struct.Rc.html
+    pub type PoolRef<A> = crate::PoolRef<A, PoolUnsync>;
+}
 
 /// A trait for initialising a `MaybeUninit<Self>` to a default value.
 pub trait PoolDefault: Default {
@@ -137,176 +211,15 @@ pub trait PoolClone: PoolDefault + Clone {
     unsafe fn clone_uninit(&self, target: &mut MaybeUninit<Self>);
 }
 
-struct Stack<A>(Vec<*mut A>);
-
-impl<A> Stack<A> {
-    fn new(max_size: usize) -> Self {
-        Stack(Vec::with_capacity(max_size))
-    }
-
-    fn push(&mut self, value: *mut A) {
-        self.0.push(value);
-    }
-
-    fn pop(&mut self) -> Option<*mut A> {
-        self.0.pop()
-    }
-
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-}
-
-/// A pool of preallocated memory sized to match type `A`.
-///
-/// In order to use it to allocate objects, pass it to
-/// [`PoolRef::new()`][PoolRef::new] or [`PoolRef::default()`][PoolRef::default].
-
-/// # Example
-///
-/// ```rust
-/// # use refpool::{Pool, PoolRef};
-/// let mut pool: Pool<usize> = Pool::new(1024);
-/// let pool_ref = PoolRef::new(&mut pool, 31337);
-/// assert_eq!(31337, *pool_ref);
-/// ```
-
-/// [PoolRef::new]: struct.PoolRef.html#method.new
-/// [PoolRef::default]: struct.PoolRef.html#method.default
-pub struct Pool<A> {
-    inner: *mut PoolInner<A>,
-}
-
-impl<A> Pool<A> {
-    /// Construct a new pool with a given max size.
-    pub fn new(max_size: usize) -> Self {
-        Box::new(PoolInner::new(max_size)).into_ref()
-    }
-
-    fn push(&self, value: *mut RefBox<A>) {
-        unsafe { (*self.inner).push(value) }
-    }
-
-    fn pop(&self) -> Box<MaybeUninit<RefBox<A>>> {
-        unsafe { (*self.inner).pop() }
-    }
-
-    fn deref(&self) -> &PoolInner<A> {
-        unsafe { &*self.inner }
-    }
-
-    /// Get the maximum size of the pool.
-    pub fn get_max_size(&self) -> usize {
-        self.deref().get_max_size()
-    }
-
-    /// Get the current size of the pool.
-    pub fn get_pool_size(&self) -> usize {
-        self.deref().get_pool_size()
-    }
-
-    /// Test if the pool is currently full.
-    pub fn is_full(&self) -> bool {
-        self.get_pool_size() >= self.get_max_size()
-    }
-}
-
-impl<A> Clone for Pool<A> {
-    fn clone(&self) -> Self {
-        unsafe { (*self.inner).make_ref() }
-    }
-}
-
-impl<A> Drop for Pool<A> {
-    fn drop(&mut self) {
-        if unsafe { (*self.inner).dec() } == 0 {
-            std::mem::drop(unsafe { Box::from_raw(self.inner) });
-        }
-    }
-}
-
-struct PoolInner<A> {
-    count: usize,
-    max_size: usize,
-    stack: Stack<RefBox<A>>,
-}
-
-impl<A> PoolInner<A> {
-    fn new(max_size: usize) -> Self {
-        Self {
-            count: 0,
-            max_size,
-            stack: Stack::new(max_size),
-        }
-    }
-
-    fn into_ref(mut self: Box<Self>) -> Pool<A> {
-        self.inc();
-        Pool {
-            inner: Box::into_raw(self),
-        }
-    }
-
-    fn make_ref(&mut self) -> Pool<A> {
-        self.inc();
-        Pool { inner: self }
-    }
-
-    /// Get the maximum size of the pool.
-    fn get_max_size(&self) -> usize {
-        self.max_size
-    }
-
-    /// Get the current size of the pool.
-    fn get_pool_size(&self) -> usize {
-        self.stack.len()
-    }
-
-    fn inc(&mut self) {
-        self.count += 1;
-    }
-
-    fn dec(&mut self) -> usize {
-        self.count -= 1;
-        self.count
-    }
-
-    unsafe fn init_box(ref_box: *mut RefBox<A>, pool: Pool<A>) {
-        let count_ptr: *mut usize = &mut (*(ref_box)).count;
-        let pool_ptr: *mut Pool<A> = &mut (*(ref_box)).pool;
-        count_ptr.write(0);
-        pool_ptr.write(pool);
-    }
-
-    fn pop(&mut self) -> Box<MaybeUninit<RefBox<A>>> {
-        if let Some(value_ptr) = self.stack.pop() {
-            let box_ptr = value_ptr.cast::<MaybeUninit<RefBox<A>>>();
-            unsafe {
-                let obj = box_ptr.as_mut().unwrap().as_mut_ptr();
-                Self::init_box(obj, self.make_ref());
-                Box::from_raw(box_ptr)
-            }
-        } else {
-            let mut obj: Box<MaybeUninit<RefBox<A>>> = Box::new(MaybeUninit::uninit());
-            unsafe { Self::init_box(obj.as_mut_ptr(), self.make_ref()) };
-            obj
-        }
-    }
-
-    fn push(&mut self, handle: *mut RefBox<A>) {
-        self.stack.push(handle);
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
     fn allocate_and_deallocate_a_bit() {
-        let pool = Pool::new(1024);
+        let pool: Pool<usize> = Pool::new(1024);
         assert_eq!(0, pool.get_pool_size());
-        let mut refs: Vec<PoolRef<usize>> = Vec::new();
+        let mut refs: Vec<_> = Vec::new();
         for _ in 0..10000 {
             refs.push(PoolRef::default(&pool));
         }
