@@ -68,6 +68,23 @@ where
     pub fn is_full(&self) -> bool {
         self.get_pool_size() >= self.get_max_size()
     }
+
+    /// Fill the pool with empty allocations.
+    ///
+    /// This operation will pre-allocate `self.get_max_size() -
+    /// self.get_pool_size()` memory chunks, without initialisation, and put
+    /// them in the pool.
+    pub fn fill(&self) {
+        while self.get_max_size() > self.get_pool_size() {
+            let chunk = unsafe {
+                std::alloc::alloc(std::alloc::Layout::from_size_align_unchecked(
+                    std::mem::size_of::<RefBox<A, S>>(),
+                    std::mem::align_of::<RefBox<A, S>>(),
+                ))
+            };
+            self.push(S::ElementPointer::wrap(chunk.cast()));
+        }
+    }
 }
 
 impl<A, S> Clone for Pool<A, S>

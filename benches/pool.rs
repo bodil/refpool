@@ -20,11 +20,8 @@ type TestType = usize;
 
 fn alloc_131072_with_pool<S: PoolSyncType<TestType>>(b: &mut Bencher) {
     let pool = Pool::<TestType, S>::new(131_072);
+    pool.fill();
     let mut vec: Vec<_> = Vec::with_capacity(131_072);
-    for _ in 0..131_072 {
-        vec.push(PoolRef::default(&pool));
-    }
-    vec.clear();
     b.iter(|| {
         for _ in 0..131_072 {
             vec.push(PoolRef::default(&pool));
