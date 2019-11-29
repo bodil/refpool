@@ -190,3 +190,22 @@ where
         self.stack.stack_push(handle);
     }
 }
+
+impl<A, S> Drop for PoolInner<A, S>
+where
+    S: PoolSyncType<A>,
+{
+    fn drop(&mut self) {
+        while let Some(chunk) = self.stack.stack_pop() {
+            unsafe {
+                std::alloc::dealloc(
+                    chunk.cast(),
+                    std::alloc::Layout::from_size_align_unchecked(
+                        std::mem::size_of::<RefBox<A, S>>(),
+                        std::mem::align_of::<RefBox<A, S>>(),
+                    ),
+                );
+            }
+        }
+    }
+}
