@@ -3,6 +3,12 @@
 A reimplementation of Rust's `std::rc::Rc` which uses a pool of reusable memory
 to speed up reallocation.
 
+## Is It Fast?
+
+It's about twice as fast as the system allocator on Linux systems, and six times
+as fast on Windows systems, when the pool is non-empty. For certain data types,
+gains can be even higher.
+
 ## Documentation
 
 * [API docs](https://docs.rs/refpool)
