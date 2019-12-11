@@ -2,6 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use std::ptr::NonNull;
+
 use crate::counter::Counter;
 use crate::handle::RefBox;
 use crate::pointer::Pointer;
@@ -41,6 +43,6 @@ impl<A> PoolSyncType<A> for PoolSync {
 impl<A> PoolSyncType<A> for PoolUnsync {
     type Counter = usize;
     type Stack = Vec<Self::ElementPointer>;
-    type ElementPointer = *mut RefBox<A, Self>;
-    type PoolPointer = *mut PoolInner<A, Self>;
+    type ElementPointer = NonNull<RefBox<A, Self>>;
+    type PoolPointer = NonNull<PoolInner<A, Self>>;
 }

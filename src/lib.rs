@@ -240,4 +240,24 @@ mod test {
         refs2.clear();
         assert_eq!(1024, pool.get_pool_size());
     }
+
+    #[test]
+    fn option_of_ref_size_equals_ref_size() {
+        use std::mem::size_of;
+        assert_eq!(
+            size_of::<PoolRef<usize, PoolUnsync>>(),
+            size_of::<Option<PoolRef<usize, PoolUnsync>>>()
+        );
+    }
+
+    // TODO: Find me a NonNullAtomicPtr so this can work too.
+    // #[cfg(feature = "sync")]
+    // #[test]
+    // fn option_sync_ref_size() {
+    //     use std::mem::size_of;
+    //     assert_eq!(
+    //         size_of::<PoolRef<usize, PoolSync>>(),
+    //         size_of::<Option<PoolRef<usize, PoolSync>>>()
+    //     );
+    // }
 }

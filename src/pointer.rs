@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use std::ptr::NonNull;
 #[cfg(feature = "sync")]
 use std::sync::atomic::AtomicPtr;
 
@@ -11,20 +12,20 @@ pub trait Pointer<A> {
     fn cast<B>(self) -> *mut B;
 }
 
-impl<A> Pointer<A> for *mut A {
+impl<A> Pointer<A> for NonNull<A> {
     #[inline(always)]
-    fn wrap(ptr: Self) -> Self {
-        ptr
+    fn wrap(ptr: *mut A) -> Self {
+        unsafe { NonNull::new_unchecked(ptr) }
     }
 
     #[inline(always)]
     fn get_ptr(&self) -> *mut A {
-        *self
+        self.as_ptr()
     }
 
     #[inline(always)]
     fn cast<B>(self) -> *mut B {
-        self as _
+        NonNull::cast(self).as_ptr()
     }
 }
 
