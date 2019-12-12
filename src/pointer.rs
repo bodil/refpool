@@ -3,8 +3,6 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use std::ptr::NonNull;
-#[cfg(feature = "sync")]
-use std::sync::atomic::AtomicPtr;
 
 pub trait Pointer<A> {
     fn wrap(ptr: *mut A) -> Self;
@@ -26,24 +24,35 @@ impl<A> Pointer<A> for NonNull<A> {
 
     #[inline(always)]
     fn cast<B>(self) -> *mut B {
-        NonNull::cast(self).as_ptr()
+        self.get_ptr().cast()
     }
 }
 
 #[cfg(feature = "sync")]
-impl<A> Pointer<A> for AtomicPtr<A> {
+pub struct NonNullAtomicPtr<A>(NonNull<A>);
+
+#[cfg(feature = "sync")]
+unsafe impl<A> Send for NonNullAtomicPtr<A> {}
+#[cfg(feature = "sync")]
+unsafe impl<A> Sync for NonNullAtomicPtr<A> {}
+
+#[cfg(feature = "sync")]
+impl<A> Pointer<A> for NonNullAtomicPtr<A> {
     #[inline(always)]
     fn wrap(ptr: *mut A) -> Self {
-        AtomicPtr::new(ptr)
+        debug_assert_eq!(false, ptr.is_null());
+        Self(unsafe { NonNull::new_unchecked(ptr) })
     }
 
     #[inline(always)]
     fn get_ptr(&self) -> *mut A {
-        self.load(std::sync::atomic::Ordering::SeqCst)
+        use std::sync::atomic::{AtomicPtr, Ordering};
+        let atomic = unsafe { &*(&self.0 as *const NonNull<A> as *const AtomicPtr<A>) };
+        atomic.load(Ordering::Relaxed)
     }
 
     #[inline(always)]
     fn cast<B>(self) -> *mut B {
-        self.get_ptr().cast()
+        self.0.get_ptr().cast()
     }
 }

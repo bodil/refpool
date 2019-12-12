@@ -259,14 +259,13 @@ mod test {
         );
     }
 
-    // TODO: Find me a NonNullAtomicPtr so this can work too.
-    // #[cfg(feature = "sync")]
-    // #[test]
-    // fn option_sync_ref_size() {
-    //     use std::mem::size_of;
-    //     assert_eq!(
-    //         size_of::<PoolRef<usize, PoolSync>>(),
-    //         size_of::<Option<PoolRef<usize, PoolSync>>>()
-    //     );
-    // }
+    #[cfg(feature = "sync")]
+    #[test]
+    fn option_sync_ref_size() {
+        use std::mem::size_of;
+        assert_eq!(
+            size_of::<PoolRef<usize, PoolSync>>(),
+            size_of::<Option<PoolRef<usize, PoolSync>>>()
+        );
+    }
 }
