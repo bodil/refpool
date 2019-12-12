@@ -11,6 +11,8 @@ adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 -   The unsync `Pool` and `PoolRef` now use `NonNull` instead of raw pointers, so that they can be
     wrapped in `Option` without growing in size.
+-   Fixed a race condition where the last `PoolRef` referencing a pool might try to drop it before
+    returning its allocation to it.
 
 ## [0.2.0] - 2019-11-29
 

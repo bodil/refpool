@@ -440,10 +440,11 @@ impl<A, S: PoolSyncType<A>> RefBox<A, S> {
 
     fn return_to_pool(self: Box<Self>) {
         if !self.pool.is_full() {
+            let pool = self.pool.clone();
             let ptr = Box::into_raw(self);
             unsafe {
-                ((*ptr).pool).push(S::ElementPointer::wrap(ptr));
                 ptr.drop_in_place();
+                pool.push(S::ElementPointer::wrap(ptr));
             };
         }
     }
