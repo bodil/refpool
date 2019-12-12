@@ -15,6 +15,7 @@ pub trait Pointer<A> {
 impl<A> Pointer<A> for NonNull<A> {
     #[inline(always)]
     fn wrap(ptr: *mut A) -> Self {
+        debug_assert_eq!(false, ptr.is_null());
         unsafe { NonNull::new_unchecked(ptr) }
     }
 

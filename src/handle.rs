@@ -222,12 +222,12 @@ where
     ///     panic!("couldn't unwrap the number after all!");
     /// }
     /// ```
-    pub fn try_unwrap(mut this: Self) -> Result<A, Self> {
+    pub fn try_unwrap(this: Self) -> Result<A, Self> {
         if this.box_ref().is_shared() {
             Err(this)
         } else {
             let handle = unsafe { Box::from_raw(this.handle.get_ptr()) };
-            this.handle = S::ElementPointer::wrap(std::ptr::null_mut());
+            std::mem::forget(this);
             Ok(handle.value)
         }
     }
@@ -240,7 +240,7 @@ where
     ///
     /// Please note that the unwrapped value is not reclaimed by the pool when
     /// dropped.
-    pub fn unwrap_or_clone(mut this: Self) -> A
+    pub fn unwrap_or_clone(this: Self) -> A
     where
         A: PoolClone,
     {
@@ -248,7 +248,7 @@ where
             this.deref().clone()
         } else {
             let handle = unsafe { Box::from_raw(this.handle.get_ptr()) };
-            this.handle = S::ElementPointer::wrap(std::ptr::null_mut());
+            std::mem::forget(this);
             handle.value
         }
     }
@@ -287,9 +287,6 @@ where
     S: PoolSyncType<A>,
 {
     fn drop(&mut self) {
-        if self.handle.get_ptr().is_null() {
-            return;
-        }
         if self.box_ref_mut().dec() != 1 {
             return;
         }

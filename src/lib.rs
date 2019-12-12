@@ -242,6 +242,15 @@ mod test {
     }
 
     #[test]
+    fn unwrap_or_clone() {
+        let pool: Pool<usize> = Pool::new(1024);
+        let val = PoolRef::new(&pool, 1337);
+        // This would crash if unwrap_or_clone tries to drop the consumed PoolRef.
+        let unwrapped = PoolRef::unwrap_or_clone(val);
+        assert_eq!(1337, unwrapped);
+    }
+
+    #[test]
     fn option_of_ref_size_equals_ref_size() {
         use std::mem::size_of;
         assert_eq!(
