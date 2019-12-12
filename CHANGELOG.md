@@ -9,10 +9,10 @@ adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ### FIXED
 
--   The `Pool` and `PoolRef` now use `NonNull` instead of raw pointers, so that they can be
-    wrapped in `Option` without growing in size.
+-   `Pool` and `PoolRef` now use `NonNull` instead of raw pointers, so that they can be wrapped in
+    `Option` without growing in size.
 -   Fixed a race condition where the last `PoolRef` referencing a pool might try to drop it before
-    returning its allocation to it.
+    returning its allocation to it, causing a memory fault.
 
 ## [0.2.0] - 2019-11-29
 
