@@ -85,6 +85,42 @@ where
             self.push(S::ElementPointer::wrap(chunk.cast()));
         }
     }
+
+    /// Convert a pool handle for type `A` into a handle for type `B`.
+    ///
+    /// The types `A` and `B` must have the same size and alignment, as
+    /// per [`std::mem::size_of`][size_of] and
+    /// [`std::mem::align_of`][align_of], or this method will panic.
+    ///
+    /// This lets you use the same pool to construct values of different
+    /// types, as long as they are of the same size, so they can reuse
+    /// each others' memory allocations.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use refpool::{Pool, PoolRef};
+    /// # use std::convert::TryInto;
+    /// let u64_pool: Pool<u64> = Pool::new(1024);
+    /// let u64_number = PoolRef::new(&u64_pool, 1337);
+    ///
+    /// let i64_pool: Pool<i64> = u64_pool.cast();
+    /// let i64_number = PoolRef::new(&i64_pool, -1337);
+    /// # assert_eq!(i64_number.abs().try_into(), Ok(*u64_number));
+    /// ```
+    ///
+    /// [size_of]: https://doc.rust-lang.org/std/mem/fn.size_of.html
+    /// [align_of]: https://doc.rust-lang.org/std/mem/fn.align_of.html
+    pub fn cast<B>(&self) -> Pool<B, S>
+    where
+        S: PoolSyncType<B>,
+    {
+        assert!(std::mem::size_of::<A>() == std::mem::size_of::<B>());
+        assert!(std::mem::align_of::<A>() == std::mem::align_of::<B>());
+
+        let inner: *mut PoolInner<B, S> = self.inner.get_ptr().cast();
+        unsafe { (*inner).make_ref() }
+    }
 }
 
 impl<A, S> Clone for Pool<A, S>
