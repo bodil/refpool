@@ -88,9 +88,9 @@
 //! You can expect bigger performance gains from data types with beneficial
 //! [`PoolDefault`][PoolDefault] and [`PoolClone`][PoolClone] implementations,
 //! "beneficial" in this case meaning cases where you can leave most of the
-//! allocated memory unitialised. [`sized_chunks::Chunk`][Chunk], which
+//! allocated memory uninitialised. [`sized_chunks::Chunk`][Chunk], which
 //! allocates 528 bytes on 64-bit platforms but only needs to initialise 16
-//! bytes for [`PoolDefault`][PoolDefault], would be a good example of this.
+//! of them for [`PoolDefault`][PoolDefault], would be a good example of this.
 
 //! # Example
 //!
