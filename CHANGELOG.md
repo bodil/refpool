@@ -12,6 +12,11 @@ adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 -   You can now `Pool::cast()` a pool handle into a pool handle for a different type, allowing you
     to construct values of multiple types from the same pool, provided they are of the exact same
     size and alignment.
+-   `Pool`s of size 0 are now represented by null pointers, meaning they allocate nothing. It also
+    means `Option<Pool>` is no longer identical in size to `Pool`, but `PoolRef` still retains that
+    property. A `Pool` of size 0 is also conceptually identical to the `None` value of an
+    `Option<Pool>`, except you can use it to construct values without having to unwrap it first, so
+    there's no good reason you should ever need `Option<Pool>`.
 
 ## [0.2.1] - 2019-12-12
 

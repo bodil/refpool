@@ -242,6 +242,32 @@ mod test {
     }
 
     #[test]
+    fn null_pool_antics() {
+        let pool: Pool<usize> = Pool::new(0);
+        assert_eq!(0, pool.get_pool_size());
+        let mut refs: Vec<_> = Vec::new();
+        for _ in 0..10000 {
+            refs.push(PoolRef::default(&pool));
+        }
+        assert_eq!(0, pool.get_pool_size());
+        refs.clear();
+        assert_eq!(0, pool.get_pool_size());
+        for _ in 0..10000 {
+            refs.push(PoolRef::default(&pool));
+        }
+        assert_eq!(0, pool.get_pool_size());
+        let mut refs2 = refs.clone();
+        assert_eq!(refs, refs2);
+        for (left, right) in refs.iter().zip(refs2.iter()) {
+            assert!(PoolRef::ptr_eq(left, right));
+        }
+        refs.clear();
+        assert_eq!(0, pool.get_pool_size());
+        refs2.clear();
+        assert_eq!(0, pool.get_pool_size());
+    }
+
+    #[test]
     fn unwrap_or_clone() {
         let pool: Pool<usize> = Pool::new(1024);
         let val = PoolRef::new(&pool, 1337);

@@ -6,7 +6,7 @@ use std::mem::MaybeUninit;
 
 use crate::counter::Counter;
 use crate::handle::RefBox;
-use crate::pointer::Pointer;
+use crate::pointer::{NullablePointer, Pointer};
 use crate::stack::Stack;
 use crate::sync_type::{PoolSyncType, PoolUnsync};
 
@@ -24,6 +24,16 @@ use crate::sync_type::{PoolSyncType, PoolUnsync};
 /// assert_eq!(31337, *pool_ref);
 /// ```
 
+unsafe fn init_box<A, S>(ref_box: *mut RefBox<A, S>, pool: Pool<A, S>)
+where
+    S: PoolSyncType<A>,
+{
+    let count_ptr: *mut _ = &mut (*(ref_box)).count;
+    let pool_ptr: *mut _ = &mut (*(ref_box)).pool;
+    count_ptr.write(Default::default());
+    pool_ptr.write(pool);
+}
+
 /// [PoolRef::new]: struct.PoolRef.html#method.new
 /// [PoolRef::default]: struct.PoolRef.html#method.default
 pub struct Pool<A, S = PoolUnsync>
@@ -37,36 +47,75 @@ impl<A, S> Pool<A, S>
 where
     S: PoolSyncType<A>,
 {
-    /// Construct a new pool with a given max size.
+    /// Construct a new pool with a given max size and return a handle to it.
+    ///
+    /// Values constructed via the pool will be returned to the pool when
+    /// dropped, up to `max_size`. When the pool is full, values will be dropped
+    /// in the regular way.
+    ///
+    /// If `max_size` is `0`, meaning the pool can never hold any dropped
+    /// values, this method will give you back a null handle without allocating
+    /// a pool. You can still use this to construct `PoolRef` values, they'll
+    /// just allocate in the old fashioned way without using a pool. It is
+    /// therefore advisable to use a zero size pool as a null value instead of
+    /// `Option<Pool>`, which eliminates the need for both a discriminant and
+    /// unwrapping the `Option` value.
     pub fn new(max_size: usize) -> Self {
-        Box::new(PoolInner::new(max_size)).into_ref()
+        if max_size == 0 {
+            Self {
+                inner: S::PoolPointer::null(),
+            }
+        } else {
+            Box::new(PoolInner::new(max_size)).into_ref()
+        }
     }
 
     pub(crate) fn push(&self, value: S::ElementPointer) {
+        debug_assert!(!self.inner.is_null());
         unsafe { (*self.inner.get_ptr()).push(value) }
     }
 
     pub(crate) fn pop(&self) -> Box<MaybeUninit<RefBox<A, S>>> {
-        unsafe { (*self.inner.get_ptr()).pop() }
+        let mut obj = if !self.inner.is_null() {
+            unsafe { (*self.inner.get_ptr()).pop() }
+        } else {
+            None
+        }
+        .unwrap_or_else(|| Box::new(MaybeUninit::uninit()));
+        unsafe { init_box(obj.as_mut_ptr(), self.clone()) };
+        obj
     }
 
     fn deref(&self) -> &PoolInner<A, S> {
+        debug_assert!(!self.inner.is_null());
         unsafe { &*self.inner.get_ptr() }
     }
 
     /// Get the maximum size of the pool.
     pub fn get_max_size(&self) -> usize {
-        self.deref().get_max_size()
+        if self.inner.is_null() {
+            0
+        } else {
+            self.deref().get_max_size()
+        }
     }
 
     /// Get the current size of the pool.
     pub fn get_pool_size(&self) -> usize {
-        self.deref().get_pool_size()
+        if self.inner.is_null() {
+            0
+        } else {
+            self.deref().get_pool_size()
+        }
     }
 
     /// Test if the pool is currently full.
     pub fn is_full(&self) -> bool {
-        self.get_pool_size() >= self.get_max_size()
+        if self.inner.is_null() {
+            true
+        } else {
+            self.get_pool_size() >= self.get_max_size()
+        }
     }
 
     /// Fill the pool with empty allocations.
@@ -75,6 +124,9 @@ where
     /// self.get_pool_size()` memory chunks, without initialisation, and put
     /// them in the pool.
     pub fn fill(&self) {
+        if self.inner.is_null() {
+            return;
+        }
         while self.get_max_size() > self.get_pool_size() {
             let chunk = unsafe {
                 std::alloc::alloc(std::alloc::Layout::from_size_align_unchecked(
@@ -119,7 +171,13 @@ where
         assert!(std::mem::align_of::<A>() == std::mem::align_of::<B>());
 
         let inner: *mut PoolInner<B, S> = self.inner.get_ptr().cast();
-        unsafe { (*inner).make_ref() }
+        if inner.is_null() {
+            Pool {
+                inner: <S as PoolSyncType<B>>::PoolPointer::wrap(inner),
+            }
+        } else {
+            unsafe { (*inner).make_ref() }
+        }
     }
 }
 
@@ -128,7 +186,13 @@ where
     S: PoolSyncType<A>,
 {
     fn clone(&self) -> Self {
-        unsafe { (*self.inner.get_ptr()).make_ref() }
+        if self.inner.is_null() {
+            Pool {
+                inner: S::PoolPointer::null(),
+            }
+        } else {
+            unsafe { (*self.inner.get_ptr()).make_ref() }
+        }
     }
 }
 
@@ -138,6 +202,9 @@ where
 {
     fn drop(&mut self) {
         let ptr = self.inner.get_ptr();
+        if ptr.is_null() {
+            return;
+        }
         if unsafe { (*ptr).dec() } == 1 {
             std::mem::drop(unsafe { Box::from_raw(ptr) });
         }
@@ -200,26 +267,11 @@ where
         self.count.dec()
     }
 
-    unsafe fn init_box(ref_box: *mut RefBox<A, S>, pool: Pool<A, S>) {
-        let count_ptr: *mut _ = &mut (*(ref_box)).count;
-        let pool_ptr: *mut _ = &mut (*(ref_box)).pool;
-        count_ptr.write(Default::default());
-        pool_ptr.write(pool);
-    }
-
-    fn pop(&mut self) -> Box<MaybeUninit<RefBox<A, S>>> {
-        if let Some(value_ptr) = self.stack.stack_pop() {
+    fn pop(&mut self) -> Option<Box<MaybeUninit<RefBox<A, S>>>> {
+        self.stack.stack_pop().map(|value_ptr| {
             let box_ptr = value_ptr.cast::<MaybeUninit<RefBox<A, S>>>();
-            unsafe {
-                let obj = box_ptr.as_mut().unwrap().as_mut_ptr();
-                Self::init_box(obj, self.make_ref());
-                Box::from_raw(box_ptr)
-            }
-        } else {
-            let mut obj: Box<MaybeUninit<RefBox<A, S>>> = Box::new(MaybeUninit::uninit());
-            unsafe { Self::init_box(obj.as_mut_ptr(), self.make_ref()) };
-            obj
-        }
+            unsafe { Box::from_raw(box_ptr) }
+        })
     }
 
     fn push(&mut self, handle: S::ElementPointer) {

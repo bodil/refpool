@@ -10,6 +10,40 @@ pub trait Pointer<A> {
     fn cast<B>(self) -> *mut B;
 }
 
+pub trait NullablePointer<A>: Pointer<A> {
+    fn null() -> Self;
+    fn is_null(&self) -> bool;
+}
+
+impl<A> Pointer<A> for *mut A {
+    #[inline(always)]
+    fn wrap(ptr: Self) -> Self {
+        ptr
+    }
+
+    #[inline(always)]
+    fn get_ptr(&self) -> Self {
+        *self
+    }
+
+    #[inline(always)]
+    fn cast<B>(self) -> *mut B {
+        self.cast()
+    }
+}
+
+impl<A> NullablePointer<A> for *mut A {
+    #[inline(always)]
+    fn null() -> Self {
+        std::ptr::null_mut()
+    }
+
+    #[inline(always)]
+    fn is_null(&self) -> bool {
+        (*self).is_null()
+    }
+}
+
 impl<A> Pointer<A> for NonNull<A> {
     #[inline(always)]
     fn wrap(ptr: *mut A) -> Self {
@@ -54,5 +88,36 @@ impl<A> Pointer<A> for NonNullAtomicPtr<A> {
     #[inline(always)]
     fn cast<B>(self) -> *mut B {
         self.0.get_ptr().cast()
+    }
+}
+
+#[cfg(feature = "sync")]
+impl<A> Pointer<A> for std::sync::atomic::AtomicPtr<A> {
+    #[inline(always)]
+    fn wrap(ptr: *mut A) -> Self {
+        Self::new(ptr)
+    }
+
+    #[inline(always)]
+    fn get_ptr(&self) -> *mut A {
+        self.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    fn cast<B>(self) -> *mut B {
+        self.get_ptr().cast()
+    }
+}
+
+#[cfg(feature = "sync")]
+impl<A> NullablePointer<A> for std::sync::atomic::AtomicPtr<A> {
+    #[inline(always)]
+    fn null() -> Self {
+        Self::new(std::ptr::null_mut())
+    }
+
+    #[inline(always)]
+    fn is_null(&self) -> bool {
+        self.get_ptr().is_null()
     }
 }
