@@ -6,7 +6,7 @@ use std::mem::MaybeUninit;
 
 use crate::counter::Counter;
 use crate::handle::RefBox;
-use crate::pointer::{NullablePointer, Pointer};
+use crate::pointer::Pointer;
 use crate::stack::Stack;
 use crate::sync_type::{PoolSyncType, PoolUnsync};
 
@@ -71,13 +71,13 @@ where
     }
 
     pub(crate) fn push(&self, value: S::ElementPointer) {
-        debug_assert!(!self.inner.is_null());
+        debug_assert!(self.inner.get_ptr_checked().is_some());
         unsafe { (*self.inner.get_ptr()).push(value) }
     }
 
     pub(crate) fn pop(&self) -> Box<MaybeUninit<RefBox<A, S>>> {
-        let mut obj = if !self.inner.is_null() {
-            unsafe { (*self.inner.get_ptr()).pop() }
+        let mut obj = if let Some(inner) = self.inner.get_ptr_checked() {
+            unsafe { (*inner).pop() }
         } else {
             None
         }
@@ -86,36 +86,25 @@ where
         obj
     }
 
-    fn deref(&self) -> &PoolInner<A, S> {
-        debug_assert!(!self.inner.is_null());
-        unsafe { &*self.inner.get_ptr() }
+    fn deref(&self) -> Option<&PoolInner<A, S>> {
+        self.inner.get_ptr_checked().map(|p| unsafe { &*p })
     }
 
     /// Get the maximum size of the pool.
     pub fn get_max_size(&self) -> usize {
-        if self.inner.is_null() {
-            0
-        } else {
-            self.deref().get_max_size()
-        }
+        self.deref().map(|p| p.get_max_size()).unwrap_or(0)
     }
 
     /// Get the current size of the pool.
     pub fn get_pool_size(&self) -> usize {
-        if self.inner.is_null() {
-            0
-        } else {
-            self.deref().get_pool_size()
-        }
+        self.deref().map(|p| p.get_pool_size()).unwrap_or(0)
     }
 
     /// Test if the pool is currently full.
     pub fn is_full(&self) -> bool {
-        if self.inner.is_null() {
-            true
-        } else {
-            self.get_pool_size() >= self.get_max_size()
-        }
+        self.deref()
+            .map(|p| p.get_pool_size() >= p.get_max_size())
+            .unwrap_or(true)
     }
 
     /// Fill the pool with empty allocations.
@@ -124,17 +113,16 @@ where
     /// self.get_pool_size()` memory chunks, without initialisation, and put
     /// them in the pool.
     pub fn fill(&self) {
-        if self.inner.is_null() {
-            return;
-        }
-        while self.get_max_size() > self.get_pool_size() {
-            let chunk = unsafe {
-                std::alloc::alloc(std::alloc::Layout::from_size_align_unchecked(
-                    std::mem::size_of::<RefBox<A, S>>(),
-                    std::mem::align_of::<RefBox<A, S>>(),
-                ))
-            };
-            self.push(S::ElementPointer::wrap(chunk.cast()));
+        if let Some(inner) = self.deref() {
+            while inner.get_max_size() > inner.get_pool_size() {
+                let chunk = unsafe {
+                    std::alloc::alloc(std::alloc::Layout::from_size_align_unchecked(
+                        std::mem::size_of::<RefBox<A, S>>(),
+                        std::mem::align_of::<RefBox<A, S>>(),
+                    ))
+                };
+                self.push(S::ElementPointer::wrap(chunk.cast()));
+            }
         }
     }
 
@@ -170,13 +158,11 @@ where
         assert!(std::mem::size_of::<A>() == std::mem::size_of::<B>());
         assert!(std::mem::align_of::<A>() == std::mem::align_of::<B>());
 
-        let inner: *mut PoolInner<B, S> = self.inner.get_ptr().cast();
-        if inner.is_null() {
-            Pool {
-                inner: <S as PoolSyncType<B>>::PoolPointer::wrap(inner),
-            }
-        } else {
+        if let Some(ptr) = self.inner.get_ptr_checked() {
+            let inner: *mut PoolInner<B, S> = ptr.cast();
             unsafe { (*inner).make_ref() }
+        } else {
+            Pool::new(0)
         }
     }
 }
@@ -186,12 +172,10 @@ where
     S: PoolSyncType<A>,
 {
     fn clone(&self) -> Self {
-        if self.inner.is_null() {
-            Pool {
-                inner: S::PoolPointer::null(),
-            }
+        if let Some(inner) = self.inner.get_ptr_checked() {
+            unsafe { (*inner).make_ref() }
         } else {
-            unsafe { (*self.inner.get_ptr()).make_ref() }
+            Self::new(0)
         }
     }
 }
@@ -201,12 +185,10 @@ where
     S: PoolSyncType<A>,
 {
     fn drop(&mut self) {
-        let ptr = self.inner.get_ptr();
-        if ptr.is_null() {
-            return;
-        }
-        if unsafe { (*ptr).dec() } == 1 {
-            std::mem::drop(unsafe { Box::from_raw(ptr) });
+        if let Some(ptr) = self.inner.get_ptr_checked() {
+            if unsafe { (*ptr).dec() } == 1 {
+                std::mem::drop(unsafe { Box::from_raw(ptr) });
+            }
         }
     }
 }

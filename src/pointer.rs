@@ -8,40 +8,8 @@ pub trait Pointer<A> {
     fn wrap(ptr: *mut A) -> Self;
     fn get_ptr(&self) -> *mut A;
     fn cast<B>(self) -> *mut B;
-}
-
-pub trait NullablePointer<A>: Pointer<A> {
+    fn get_ptr_checked(&self) -> Option<*mut A>;
     fn null() -> Self;
-    fn is_null(&self) -> bool;
-}
-
-impl<A> Pointer<A> for *mut A {
-    #[inline(always)]
-    fn wrap(ptr: Self) -> Self {
-        ptr
-    }
-
-    #[inline(always)]
-    fn get_ptr(&self) -> Self {
-        *self
-    }
-
-    #[inline(always)]
-    fn cast<B>(self) -> *mut B {
-        self.cast()
-    }
-}
-
-impl<A> NullablePointer<A> for *mut A {
-    #[inline(always)]
-    fn null() -> Self {
-        std::ptr::null_mut()
-    }
-
-    #[inline(always)]
-    fn is_null(&self) -> bool {
-        (*self).is_null()
-    }
 }
 
 impl<A> Pointer<A> for NonNull<A> {
@@ -58,7 +26,21 @@ impl<A> Pointer<A> for NonNull<A> {
 
     #[inline(always)]
     fn cast<B>(self) -> *mut B {
-        self.get_ptr().cast()
+        self.as_ptr().cast()
+    }
+
+    #[inline(always)]
+    fn get_ptr_checked(&self) -> Option<*mut A> {
+        if *self == NonNull::dangling() {
+            None
+        } else {
+            Some(self.as_ptr())
+        }
+    }
+
+    #[inline(always)]
+    fn null() -> Self {
+        NonNull::dangling()
     }
 }
 
@@ -87,37 +69,23 @@ impl<A> Pointer<A> for NonNullAtomicPtr<A> {
 
     #[inline(always)]
     fn cast<B>(self) -> *mut B {
-        self.0.get_ptr().cast()
-    }
-}
-
-#[cfg(feature = "sync")]
-impl<A> Pointer<A> for std::sync::atomic::AtomicPtr<A> {
-    #[inline(always)]
-    fn wrap(ptr: *mut A) -> Self {
-        Self::new(ptr)
-    }
-
-    #[inline(always)]
-    fn get_ptr(&self) -> *mut A {
-        self.load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    #[inline(always)]
-    fn cast<B>(self) -> *mut B {
         self.get_ptr().cast()
     }
-}
 
-#[cfg(feature = "sync")]
-impl<A> NullablePointer<A> for std::sync::atomic::AtomicPtr<A> {
     #[inline(always)]
-    fn null() -> Self {
-        Self::new(std::ptr::null_mut())
+    fn get_ptr_checked(&self) -> Option<*mut A> {
+        use std::sync::atomic::{AtomicPtr, Ordering};
+        let atomic = unsafe { &*(&self.0 as *const NonNull<A> as *const AtomicPtr<A>) };
+        let ptr = atomic.load(Ordering::Relaxed);
+        if ptr == NonNull::dangling().as_ptr() {
+            None
+        } else {
+            Some(ptr)
+        }
     }
 
     #[inline(always)]
-    fn is_null(&self) -> bool {
-        self.get_ptr().is_null()
+    fn null() -> Self {
+        Self(NonNull::dangling())
     }
 }

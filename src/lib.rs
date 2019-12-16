@@ -283,6 +283,10 @@ mod test {
             size_of::<PoolRef<usize, PoolUnsync>>(),
             size_of::<Option<PoolRef<usize, PoolUnsync>>>()
         );
+        assert_eq!(
+            size_of::<Pool<usize, PoolUnsync>>(),
+            size_of::<Option<Pool<usize, PoolUnsync>>>()
+        );
     }
 
     #[cfg(feature = "sync")]
@@ -292,6 +296,10 @@ mod test {
         assert_eq!(
             size_of::<PoolRef<usize, PoolSync>>(),
             size_of::<Option<PoolRef<usize, PoolSync>>>()
+        );
+        assert_eq!(
+            size_of::<Pool<usize, PoolSync>>(),
+            size_of::<Option<Pool<usize, PoolSync>>>()
         );
     }
 }
