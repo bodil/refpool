@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### ADDED
+
+-   `Pool` now implements `Debug`.
+
 ### FIXED
 
 -   `Option<Pool>` and `Pool` are now once again the same size. Zero sized pools still don't cause

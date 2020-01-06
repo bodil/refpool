@@ -4,7 +4,7 @@
 
 use std::ptr::NonNull;
 
-pub trait Pointer<A> {
+pub trait Pointer<A>: std::fmt::Pointer {
     fn wrap(ptr: *mut A) -> Self;
     fn get_ptr(&self) -> *mut A;
     fn cast<B>(self) -> *mut B;
@@ -45,6 +45,7 @@ impl<A> Pointer<A> for NonNull<A> {
 }
 
 #[cfg(feature = "sync")]
+#[allow(missing_debug_implementations)]
 pub struct NonNullAtomicPtr<A>(NonNull<A>);
 
 #[cfg(feature = "sync")]
@@ -87,5 +88,12 @@ impl<A> Pointer<A> for NonNullAtomicPtr<A> {
     #[inline(always)]
     fn null() -> Self {
         Self(NonNull::dangling())
+    }
+}
+
+#[cfg(feature = "sync")]
+impl<A> std::fmt::Pointer for NonNullAtomicPtr<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        self.0.fmt(f)
     }
 }

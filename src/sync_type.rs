@@ -29,9 +29,11 @@ pub trait PoolSyncType<A>: Sized {
 ///
 /// This is only available if you've enabled the `sync` feature flag.
 #[cfg(feature = "sync")]
+#[derive(Debug)]
 pub struct PoolSync;
 
 /// Marker type for non-thread safe pools.
+#[derive(Debug)]
 pub struct PoolUnsync;
 
 #[cfg(feature = "sync")]

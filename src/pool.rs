@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use std::fmt::{Debug, Error, Formatter};
 use std::mem::MaybeUninit;
 
 use crate::counter::Counter;
@@ -193,7 +194,34 @@ where
     }
 }
 
+impl<A, S> Debug for Pool<A, S>
+where
+    S: PoolSyncType<A>,
+{
+    /// Debug implementation for `Pool`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use refpool::Pool;
+    /// let mut pool: Pool<usize> = Pool::new(256);
+    /// assert!(format!("{:?}", pool).starts_with("Pool[0/256]:0x"));
+    /// pool.fill();
+    /// assert!(format!("{:?}", pool).starts_with("Pool[256/256]:0x"));
+    /// ```
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(
+            f,
+            "Pool[{}/{}]:{:p}",
+            self.get_pool_size(),
+            self.get_max_size(),
+            self.inner
+        )
+    }
+}
+
 #[doc(hidden)]
+#[allow(missing_debug_implementations)]
 pub struct PoolInner<A, S>
 where
     S: PoolSyncType<A>,

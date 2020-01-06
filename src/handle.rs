@@ -415,6 +415,7 @@ where
 // RefBox
 
 #[doc(hidden)]
+#[allow(missing_debug_implementations)]
 pub struct RefBox<A, S>
 where
     S: PoolSyncType<A>,
