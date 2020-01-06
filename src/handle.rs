@@ -51,6 +51,15 @@ where
     /// existing value using [`PoolRef::new()`][new], depending on the data
     /// type.
     ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use refpool::{Pool, PoolRef};
+    /// let pool: Pool<usize> = Pool::new(256);
+    /// let zero = PoolRef::default(&pool);
+    /// assert_eq!(0, *zero);
+    /// ```
+    ///
     /// [new]: #method.new
     /// [default_uninit]: trait.PoolDefault.html#tymethod.default_uninit
     pub fn default(pool: &Pool<A, S>) -> Self
@@ -72,6 +81,15 @@ where
     /// [`PoolRef::default()`][default], so it's not recommended to use this to
     /// construct the default value.
     ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use refpool::{Pool, PoolRef};
+    /// let pool: Pool<usize> = Pool::new(256);
+    /// let number = PoolRef::new(&pool, 1337);
+    /// assert_eq!(1337, *number);
+    /// ```
+    ///
     /// [default]: #method.default
     pub fn new(pool: &Pool<A, S>, value: A) -> Self {
         let mut handle = pool.pop();
@@ -88,18 +106,18 @@ where
     /// clone, which may be more efficient than using
     /// [`PoolRef::new(value.clone())`][new].
     ///
-    /// [new]: #method.new
-    /// [clone_uninit]: trait.PoolClone.html#tymethod.clone_uninit
-
     /// # Examples
     ///
     /// ```rust
     /// # use refpool::{Pool, PoolRef};
-    /// let mut pool: Pool<Vec<usize>> = Pool::new(1);
+    /// let pool: Pool<Vec<usize>> = Pool::new(1);
     /// let vec = vec![1, 2, 3];
-    /// let ref1 = PoolRef::clone_from(&mut pool, &vec);
+    /// let ref1 = PoolRef::clone_from(&pool, &vec);
     /// assert_eq!(vec, *ref1);
     /// ```
+    ///
+    /// [new]: #method.new
+    /// [clone_uninit]: trait.PoolClone.html#tymethod.clone_uninit
     pub fn clone_from(pool: &Pool<A, S>, value: &A) -> Self
     where
         A: PoolClone,
@@ -114,6 +132,15 @@ where
 
     /// Construct a [`Pin`][Pin]ned `PoolRef` with a default value.
     ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use refpool::{Pool, PoolRef};
+    /// let pool: Pool<usize> = Pool::new(256);
+    /// let zero = PoolRef::pin_default(&pool);
+    /// assert_eq!(0, *zero);
+    /// ```
+    ///
     /// [Pin]: https://doc.rust-lang.org/std/pin/struct.Pin.html
     pub fn pin_default(pool: &Pool<A, S>) -> Pin<Self>
     where
@@ -123,6 +150,15 @@ where
     }
 
     /// Construct a [`Pin`][Pin]ned `PoolRef` with the given value.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use refpool::{Pool, PoolRef};
+    /// let pool: Pool<usize> = Pool::new(256);
+    /// let number = PoolRef::pin(&pool, 1337);
+    /// assert_eq!(1337, *number);
+    /// ```
     ///
     /// [Pin]: https://doc.rust-lang.org/std/pin/struct.Pin.html
     pub fn pin(pool: &Pool<A, S>, value: A) -> Pin<Self> {
@@ -134,6 +170,18 @@ where
     /// This will use [`PoolClone::clone_uninit()`][clone_uninit] to perform
     /// the clone, which may be more efficient than using
     /// [`PoolRef::new((*this_ref).clone())`][new].
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use refpool::{Pool, PoolRef};
+    /// let pool: Pool<usize> = Pool::new(256);
+    /// let mut number = PoolRef::new(&pool, 1337);
+    /// let other_number = number.cloned(&pool);
+    /// *PoolRef::make_mut(&pool, &mut number) = 123;
+    /// assert_eq!(123, *number);
+    /// assert_eq!(1337, *other_number);
+    /// ```
     ///
     /// [new]: #method.new
     /// [clone_uninit]: trait.PoolClone.html#tymethod.clone_uninit
@@ -156,10 +204,10 @@ where
     ///
     /// ```rust
     /// # use refpool::{Pool, PoolRef};
-    /// let mut pool: Pool<usize> = Pool::new(1);
-    /// let ref1 = PoolRef::new(&mut pool, 1);
+    /// let pool: Pool<usize> = Pool::new(1);
+    /// let ref1 = PoolRef::new(&pool, 1);
     /// let mut ref2 = ref1.clone();
-    /// *PoolRef::make_mut(&mut pool, &mut ref2) = 2;
+    /// *PoolRef::make_mut(&pool, &mut ref2) = 2;
     /// assert_eq!(1, *ref1);
     /// assert_eq!(2, *ref2);
     /// ```
@@ -184,6 +232,21 @@ where
     ///
     /// This will produce a `None` if this `PoolRef` isn't a unique reference
     /// to the value.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use refpool::{Pool, PoolRef};
+    /// let pool: Pool<usize> = Pool::new(128);
+    /// let mut number = PoolRef::new(&pool, 1337);
+    /// assert_eq!(1337, *number);
+    /// if let Some(number_ref) = PoolRef::get_mut(&mut number) {
+    ///     *number_ref = 123;
+    /// } else {
+    ///     panic!("Couldn't get a unique reference!");
+    /// }
+    /// assert_eq!(123, *number);
+    /// ```
     pub fn get_mut(this: &mut Self) -> Option<&mut A> {
         let handle = this.box_ref_mut();
         if handle.is_shared() {
@@ -205,8 +268,8 @@ where
     ///
     /// ```rust
     /// # use refpool::{Pool, PoolRef};
-    /// let mut pool: Pool<usize> = Pool::new(1);
-    /// let ref1 = PoolRef::default(&mut pool);
+    /// let pool: Pool<usize> = Pool::new(1);
+    /// let ref1 = PoolRef::default(&pool);
     /// let ref2 = ref1.clone();
     /// let unwrap_result = PoolRef::try_unwrap(ref1);
     /// assert!(unwrap_result.is_err());
@@ -214,8 +277,8 @@ where
     ///
     /// ```rust
     /// # use refpool::{Pool, PoolRef};
-    /// let mut pool: Pool<usize> = Pool::new(1);
-    /// let ref1 = PoolRef::new(&mut pool, 1337);
+    /// let pool: Pool<usize> = Pool::new(1);
+    /// let ref1 = PoolRef::new(&pool, 1337);
     /// if let Ok(number) = PoolRef::try_unwrap(ref1) {
     ///     assert_eq!(1337, number);
     /// } else {
@@ -240,6 +303,16 @@ where
     ///
     /// Please note that the unwrapped value is not reclaimed by the pool when
     /// dropped.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use refpool::{Pool, PoolRef};
+    /// let pool: Pool<usize> = Pool::new(1);
+    /// let number = PoolRef::new(&pool, 1337);
+    /// let other_ref = number.clone();
+    /// assert_eq!(1337, PoolRef::unwrap_or_clone(other_ref));
+    /// ```
     pub fn unwrap_or_clone(this: Self) -> A
     where
         A: PoolClone,
@@ -259,8 +332,8 @@ where
     ///
     /// ```rust
     /// # use refpool::{Pool, PoolRef};
-    /// let mut pool: Pool<usize> = Pool::new(1);
-    /// let ref1 = PoolRef::default(&mut pool);
+    /// let pool: Pool<usize> = Pool::new(1);
+    /// let ref1 = PoolRef::default(&pool);
     /// let ref2 = ref1.clone();
     /// assert!(PoolRef::ptr_eq(&ref1, &ref2));
     /// ```
@@ -269,6 +342,17 @@ where
     }
 
     /// Get the current number of `LocalRef` references to the wrapped value.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use refpool::{Pool, PoolRef};
+    /// let pool: Pool<usize> = Pool::new(1);
+    /// let ref1 = PoolRef::default(&pool);
+    /// let ref2 = ref1.clone();
+    /// let ref3 = ref2.clone();
+    /// assert_eq!(3, PoolRef::strong_count(&ref1));
+    /// ```
     pub fn strong_count(this: &Self) -> usize {
         this.box_ref().count.count()
     }

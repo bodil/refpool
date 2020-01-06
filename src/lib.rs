@@ -4,7 +4,12 @@
 
 #![forbid(rust_2018_idioms)]
 #![deny(nonstandard_style)]
-#![warn(unreachable_pub, missing_docs, missing_debug_implementations)]
+#![warn(
+    unreachable_pub,
+    missing_docs,
+    missing_debug_implementations,
+    missing_doc_code_examples
+)]
 
 //! A reimplementation of [`std::rc::Rc`][Rc] which uses a pool of reusable
 //! memory to speed up reallocation.

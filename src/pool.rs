@@ -11,20 +11,6 @@ use crate::pointer::Pointer;
 use crate::stack::Stack;
 use crate::sync_type::{PoolSyncType, PoolUnsync};
 
-/// A pool of preallocated memory sized to match type `A`.
-///
-/// In order to use it to allocate objects, pass it to
-/// [`PoolRef::new()`][PoolRef::new] or [`PoolRef::default()`][PoolRef::default].
-
-/// # Example
-///
-/// ```rust
-/// # use refpool::{Pool, PoolRef};
-/// let mut pool: Pool<usize> = Pool::new(1024);
-/// let pool_ref = PoolRef::new(&mut pool, 31337);
-/// assert_eq!(31337, *pool_ref);
-/// ```
-
 unsafe fn init_box<A, S>(ref_box: *mut RefBox<A, S>, pool: Pool<A, S>)
 where
     S: PoolSyncType<A>,
@@ -35,8 +21,23 @@ where
     pool_ptr.write(pool);
 }
 
+/// A pool of preallocated memory sized to match type `A`.
+///
+/// In order to use it to allocate objects, pass it to
+/// [`PoolRef::new()`][PoolRef::new] or [`PoolRef::default()`][PoolRef::default].
+///
+/// # Example
+///
+/// ```rust
+/// # use refpool::{Pool, PoolRef};
+/// let mut pool: Pool<usize> = Pool::new(1024);
+/// let pool_ref = PoolRef::new(&mut pool, 31337);
+/// assert_eq!(31337, *pool_ref);
+/// ```
+///
 /// [PoolRef::new]: struct.PoolRef.html#method.new
 /// [PoolRef::default]: struct.PoolRef.html#method.default
+
 pub struct Pool<A, S = PoolUnsync>
 where
     S: PoolSyncType<A>,
@@ -59,8 +60,8 @@ where
     /// a pool. You can still use this to construct `PoolRef` values, they'll
     /// just allocate in the old fashioned way without using a pool. It is
     /// therefore advisable to use a zero size pool as a null value instead of
-    /// `Option<Pool>`, which eliminates the need for both a discriminant and
-    /// unwrapping the `Option` value.
+    /// `Option<Pool>`, which eliminates the need for unwrapping the `Option`
+    /// value.
     pub fn new(max_size: usize) -> Self {
         if max_size == 0 {
             Self {
@@ -113,6 +114,16 @@ where
     /// This operation will pre-allocate `self.get_max_size() -
     /// self.get_pool_size()` memory chunks, without initialisation, and put
     /// them in the pool.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use refpool::{Pool, PoolRef};
+    /// let pool: Pool<usize> = Pool::new(1024);
+    /// assert_eq!(0, pool.get_pool_size());
+    /// pool.fill();
+    /// assert_eq!(1024, pool.get_pool_size());
+    /// ```
     pub fn fill(&self) {
         if let Some(inner) = self.deref() {
             while inner.get_max_size() > inner.get_pool_size() {
@@ -134,8 +145,8 @@ where
     /// [`std::mem::align_of`][align_of], or this method will panic.
     ///
     /// This lets you use the same pool to construct values of different
-    /// types, as long as they are of the same size, so they can reuse
-    /// each others' memory allocations.
+    /// types, as long as they are of the same size and alignment, so
+    /// they can reuse each others' memory allocations.
     ///
     /// # Examples
     ///
