@@ -12,6 +12,9 @@ categories = ["memory-management"]
 keywords = ["rc", "memory-pool"]
 exclude = ["release.toml", "proptest-regressions/**"]
 
+[package.metadata.docs.rs]
+all-features = true
+
 [features]
 sync = ["crossbeam-queue"]
 
