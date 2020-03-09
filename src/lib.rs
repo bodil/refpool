@@ -219,6 +219,47 @@ pub trait PoolClone: PoolDefault + Clone {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct DropTest<'a> {
+        counter: &'a AtomicUsize,
+    }
+
+    impl<'a> DropTest<'a> {
+        fn new(counter: &'a AtomicUsize) -> Self {
+            counter.fetch_add(1, Ordering::Relaxed);
+            DropTest { counter }
+        }
+    }
+
+    impl<'a> Drop for DropTest<'a> {
+        fn drop(&mut self) {
+            self.counter.fetch_sub(1, Ordering::Relaxed);
+        }
+    }
+
+    fn fill_drop(pool_size: usize, alloc_size: usize) {
+        let counter = AtomicUsize::new(0);
+        let pool: Pool<DropTest<'_>> = Pool::new(pool_size);
+        {
+            let mut vec = Vec::new();
+            for _ in 0..alloc_size {
+                vec.push(PoolRef::new(&pool, DropTest::new(&counter)));
+            }
+            assert_eq!(alloc_size, counter.load(Ordering::SeqCst));
+        }
+        assert_eq!(0, counter.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn dropping_sized() {
+        fill_drop(1024, 2048);
+    }
+
+    #[test]
+    fn dropping_null() {
+        fill_drop(0, 128);
+    }
 
     #[test]
     fn allocate_and_deallocate_a_bit() {
