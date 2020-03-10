@@ -12,7 +12,7 @@ use std::pin::Pin;
 
 use crate::counter::Counter;
 use crate::pointer::Pointer;
-use crate::sync_type::PoolSyncType;
+use crate::types::ElementPointer;
 use crate::{Pool, PoolClone, PoolDefault};
 
 unsafe fn assume_init<A>(maybe_boxed: Box<MaybeUninit<A>>) -> Box<A> {
@@ -21,10 +21,7 @@ unsafe fn assume_init<A>(maybe_boxed: Box<MaybeUninit<A>>) -> Box<A> {
     // feature stabilises.
 }
 
-unsafe fn data_ptr<A, S>(this: &mut MaybeUninit<RefBox<A, S>>) -> &mut MaybeUninit<A>
-where
-    S: PoolSyncType<A>,
-{
+unsafe fn data_ptr<A>(this: &mut MaybeUninit<RefBox<A>>) -> &mut MaybeUninit<A> {
     (*this.as_mut_ptr())
         .value_as_mut_ptr()
         .cast::<MaybeUninit<A>>()
@@ -33,17 +30,11 @@ where
 }
 
 /// A reference counted pointer to `A`.
-pub struct PoolRef<A, S>
-where
-    S: PoolSyncType<A>,
-{
-    pub(crate) handle: S::ElementPointer,
+pub struct PoolRef<A> {
+    pub(crate) handle: ElementPointer<A>,
 }
 
-impl<A, S> PoolRef<A, S>
-where
-    S: PoolSyncType<A>,
-{
+impl<A> PoolRef<A> {
     /// Construct a `PoolRef` with a newly initialised value of `A`.
     ///
     /// This uses [`PoolDefault::default_uninit()`][default_uninit] to initialise a
@@ -62,7 +53,7 @@ where
     ///
     /// [new]: #method.new
     /// [default_uninit]: trait.PoolDefault.html#tymethod.default_uninit
-    pub fn default(pool: &Pool<A, S>) -> Self
+    pub fn default(pool: &Pool<A>) -> Self
     where
         A: PoolDefault,
     {
@@ -91,7 +82,7 @@ where
     /// ```
     ///
     /// [default]: #method.default
-    pub fn new(pool: &Pool<A, S>, value: A) -> Self {
+    pub fn new(pool: &Pool<A>, value: A) -> Self {
         let mut handle = pool.pop();
         unsafe {
             data_ptr(&mut handle).as_mut_ptr().write(value);
@@ -118,7 +109,7 @@ where
     ///
     /// [new]: #method.new
     /// [clone_uninit]: trait.PoolClone.html#tymethod.clone_uninit
-    pub fn clone_from(pool: &Pool<A, S>, value: &A) -> Self
+    pub fn clone_from(pool: &Pool<A>, value: &A) -> Self
     where
         A: PoolClone,
     {
@@ -142,7 +133,7 @@ where
     /// ```
     ///
     /// [Pin]: https://doc.rust-lang.org/std/pin/struct.Pin.html
-    pub fn pin_default(pool: &Pool<A, S>) -> Pin<Self>
+    pub fn pin_default(pool: &Pool<A>) -> Pin<Self>
     where
         A: PoolDefault,
     {
@@ -161,7 +152,7 @@ where
     /// ```
     ///
     /// [Pin]: https://doc.rust-lang.org/std/pin/struct.Pin.html
-    pub fn pin(pool: &Pool<A, S>, value: A) -> Pin<Self> {
+    pub fn pin(pool: &Pool<A>, value: A) -> Pin<Self> {
         unsafe { Pin::new_unchecked(Self::new(pool, value)) }
     }
 
@@ -185,7 +176,7 @@ where
     ///
     /// [new]: #method.new
     /// [clone_uninit]: trait.PoolClone.html#tymethod.clone_uninit
-    pub fn cloned(&self, pool: &Pool<A, S>) -> Self
+    pub fn cloned(&self, pool: &Pool<A>) -> Self
     where
         A: PoolClone,
     {
@@ -211,7 +202,7 @@ where
     /// assert_eq!(1, *ref1);
     /// assert_eq!(2, *ref2);
     /// ```
-    pub fn make_mut<'a>(pool: &Pool<A, S>, this: &'a mut Self) -> &'a mut A
+    pub fn make_mut<'a>(pool: &Pool<A>, this: &'a mut Self) -> &'a mut A
     where
         A: PoolClone,
     {
@@ -223,7 +214,7 @@ where
             };
             new_handle.inc();
             this.box_ref_mut().dec();
-            this.handle = S::ElementPointer::wrap(Box::into_raw(new_handle));
+            this.handle = ElementPointer::wrap(Box::into_raw(new_handle));
         }
         this.box_ref_mut().value_as_mut()
     }
@@ -357,19 +348,16 @@ where
         this.box_ref().count.count()
     }
 
-    fn box_ref(&self) -> &RefBox<A, S> {
+    fn box_ref(&self) -> &RefBox<A> {
         unsafe { &*self.handle.get_ptr() }
     }
 
-    fn box_ref_mut(&mut self) -> &mut RefBox<A, S> {
+    fn box_ref_mut(&mut self) -> &mut RefBox<A> {
         unsafe { &mut *self.handle.get_ptr() }
     }
 }
 
-impl<A, S> Drop for PoolRef<A, S>
-where
-    S: PoolSyncType<A>,
-{
+impl<A> Drop for PoolRef<A> {
     fn drop(&mut self) {
         if self.box_ref_mut().dec() != 1 {
             return;
@@ -379,118 +367,92 @@ where
     }
 }
 
-impl<A, S> Clone for PoolRef<A, S>
-where
-    S: PoolSyncType<A>,
-{
+impl<A> Clone for PoolRef<A> {
     fn clone(&self) -> Self {
         let mut new_ref: Self = PoolRef {
-            handle: S::ElementPointer::wrap(self.handle.get_ptr()),
+            handle: ElementPointer::wrap(self.handle.get_ptr()),
         };
         new_ref.box_ref_mut().inc();
         new_ref
     }
 }
 
-impl<A, S> Deref for PoolRef<A, S>
-where
-    S: PoolSyncType<A>,
-{
+impl<A> Deref for PoolRef<A> {
     type Target = A;
     fn deref(&self) -> &Self::Target {
         self.box_ref().value_as_ref()
     }
 }
 
-impl<A, S> AsRef<A> for PoolRef<A, S>
-where
-    S: PoolSyncType<A>,
-{
+impl<A> AsRef<A> for PoolRef<A> {
     fn as_ref(&self) -> &A {
         self.deref()
     }
 }
 
-impl<A, S> Borrow<A> for PoolRef<A, S>
-where
-    S: PoolSyncType<A>,
-{
+impl<A> Borrow<A> for PoolRef<A> {
     fn borrow(&self) -> &A {
         self.deref()
     }
 }
 
-impl<A, S> PartialEq for PoolRef<A, S>
+impl<A> PartialEq for PoolRef<A>
 where
     A: PartialEq,
-    S: PoolSyncType<A>,
 {
     fn eq(&self, other: &Self) -> bool {
         (**self) == (**other)
     }
 }
 
-impl<A, S> Eq for PoolRef<A, S>
-where
-    A: Eq,
-    S: PoolSyncType<A>,
-{
-}
+impl<A> Eq for PoolRef<A> where A: Eq {}
 
-impl<A, S> PartialOrd for PoolRef<A, S>
+impl<A> PartialOrd for PoolRef<A>
 where
     A: PartialOrd,
-    S: PoolSyncType<A>,
 {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         (**self).partial_cmp(&**other)
     }
 }
 
-impl<A, S> Ord for PoolRef<A, S>
+impl<A> Ord for PoolRef<A>
 where
     A: Ord,
-    S: PoolSyncType<A>,
 {
     fn cmp(&self, other: &Self) -> Ordering {
         (**self).cmp(&**other)
     }
 }
 
-impl<A, S> Hash for PoolRef<A, S>
+impl<A> Hash for PoolRef<A>
 where
     A: Hash,
-    S: PoolSyncType<A>,
 {
     fn hash<H: Hasher>(&self, hasher: &mut H) {
         (**self).hash(hasher)
     }
 }
 
-impl<A, S> Display for PoolRef<A, S>
+impl<A> Display for PoolRef<A>
 where
     A: Display,
-    S: PoolSyncType<A>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         (**self).fmt(f)
     }
 }
 
-impl<A, S> Debug for PoolRef<A, S>
+impl<A> Debug for PoolRef<A>
 where
     A: Debug,
-    S: PoolSyncType<A>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         (**self).fmt(f)
     }
 }
 
-impl<A, S> std::fmt::Pointer for PoolRef<A, S>
-where
-    S: PoolSyncType<A>,
-{
+impl<A> std::fmt::Pointer for PoolRef<A> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         std::fmt::Pointer::fmt(&(&**self as *const A), f)
     }
@@ -498,28 +460,23 @@ where
 
 // RefBox
 
-#[doc(hidden)]
-#[allow(missing_debug_implementations)]
-pub struct RefBox<A, S>
-where
-    S: PoolSyncType<A>,
-{
-    pub(crate) count: S::Counter,
-    pub(crate) pool: Pool<A, S>,
+pub(crate) struct RefBox<A> {
+    pub(crate) count: usize,
+    pub(crate) pool: Pool<A>,
     pub(crate) value: A,
 }
 
-impl<A, S: PoolSyncType<A>> RefBox<A, S> {
-    fn into_ref(mut self: Box<Self>) -> PoolRef<A, S> {
+impl<A> RefBox<A> {
+    fn into_ref(mut self: Box<Self>) -> PoolRef<A> {
         let ref_handle = self.new_ref();
         Box::leak(self);
         ref_handle
     }
 
-    fn new_ref(&mut self) -> PoolRef<A, S> {
+    fn new_ref(&mut self) -> PoolRef<A> {
         self.inc();
         PoolRef {
-            handle: S::ElementPointer::wrap(self),
+            handle: ElementPointer::wrap(self),
         }
     }
 
@@ -529,7 +486,7 @@ impl<A, S: PoolSyncType<A>> RefBox<A, S> {
             let ptr = Box::into_raw(self);
             unsafe {
                 ptr.drop_in_place();
-                pool.push(S::ElementPointer::wrap(ptr));
+                pool.push(ElementPointer::wrap(ptr));
             };
         }
     }

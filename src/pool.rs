@@ -9,12 +9,9 @@ use crate::counter::Counter;
 use crate::handle::RefBox;
 use crate::pointer::Pointer;
 use crate::stack::Stack;
-use crate::sync_type::{PoolSyncType, PoolUnsync};
+use crate::types::{ElementPointer, PoolPointer};
 
-unsafe fn init_box<A, S>(ref_box: *mut RefBox<A, S>, pool: Pool<A, S>)
-where
-    S: PoolSyncType<A>,
-{
+unsafe fn init_box<A>(ref_box: *mut RefBox<A>, pool: Pool<A>) {
     let count_ptr: *mut _ = &mut (*(ref_box)).count;
     let pool_ptr: *mut _ = &mut (*(ref_box)).pool;
     count_ptr.write(Default::default());
@@ -38,17 +35,11 @@ where
 /// [PoolRef::new]: struct.PoolRef.html#method.new
 /// [PoolRef::default]: struct.PoolRef.html#method.default
 
-pub struct Pool<A, S = PoolUnsync>
-where
-    S: PoolSyncType<A>,
-{
-    inner: S::PoolPointer,
+pub struct Pool<A> {
+    inner: PoolPointer<A>,
 }
 
-impl<A, S> Pool<A, S>
-where
-    S: PoolSyncType<A>,
-{
+impl<A> Pool<A> {
     /// Construct a new pool with a given max size and return a handle to it.
     ///
     /// Values constructed via the pool will be returned to the pool when
@@ -65,19 +56,19 @@ where
     pub fn new(max_size: usize) -> Self {
         if max_size == 0 {
             Self {
-                inner: S::PoolPointer::null(),
+                inner: PoolPointer::null(),
             }
         } else {
             Box::new(PoolInner::new(max_size)).into_ref()
         }
     }
 
-    pub(crate) fn push(&self, value: S::ElementPointer) {
+    pub(crate) fn push(&self, value: ElementPointer<A>) {
         debug_assert!(self.inner.get_ptr_checked().is_some());
         unsafe { (*self.inner.get_ptr()).push(value) }
     }
 
-    pub(crate) fn pop(&self) -> Box<MaybeUninit<RefBox<A, S>>> {
+    pub(crate) fn pop(&self) -> Box<MaybeUninit<RefBox<A>>> {
         let mut obj = if let Some(inner) = self.inner.get_ptr_checked() {
             unsafe { (*inner).pop() }
         } else {
@@ -88,7 +79,7 @@ where
         obj
     }
 
-    fn deref(&self) -> Option<&PoolInner<A, S>> {
+    fn deref(&self) -> Option<&PoolInner<A>> {
         self.inner.get_ptr_checked().map(|p| unsafe { &*p })
     }
 
@@ -129,11 +120,11 @@ where
             while inner.get_max_size() > inner.get_pool_size() {
                 let chunk = unsafe {
                     std::alloc::alloc(std::alloc::Layout::from_size_align_unchecked(
-                        std::mem::size_of::<RefBox<A, S>>(),
-                        std::mem::align_of::<RefBox<A, S>>(),
+                        std::mem::size_of::<RefBox<A>>(),
+                        std::mem::align_of::<RefBox<A>>(),
                     ))
                 };
-                self.push(S::ElementPointer::wrap(chunk.cast()));
+                self.push(ElementPointer::wrap(chunk.cast()));
             }
         }
     }
@@ -163,15 +154,12 @@ where
     ///
     /// [size_of]: https://doc.rust-lang.org/std/mem/fn.size_of.html
     /// [align_of]: https://doc.rust-lang.org/std/mem/fn.align_of.html
-    pub fn cast<B>(&self) -> Pool<B, S>
-    where
-        S: PoolSyncType<B>,
-    {
+    pub fn cast<B>(&self) -> Pool<B> {
         assert!(std::mem::size_of::<A>() == std::mem::size_of::<B>());
         assert!(std::mem::align_of::<A>() == std::mem::align_of::<B>());
 
         if let Some(ptr) = self.inner.get_ptr_checked() {
-            let inner: *mut PoolInner<B, S> = ptr.cast();
+            let inner: *mut PoolInner<B> = ptr.cast();
             unsafe { (*inner).make_ref() }
         } else {
             Pool::new(0)
@@ -179,10 +167,7 @@ where
     }
 }
 
-impl<A, S> Clone for Pool<A, S>
-where
-    S: PoolSyncType<A>,
-{
+impl<A> Clone for Pool<A> {
     fn clone(&self) -> Self {
         if let Some(inner) = self.inner.get_ptr_checked() {
             unsafe { (*inner).make_ref() }
@@ -192,10 +177,7 @@ where
     }
 }
 
-impl<A, S> Drop for Pool<A, S>
-where
-    S: PoolSyncType<A>,
-{
+impl<A> Drop for Pool<A> {
     fn drop(&mut self) {
         if let Some(ptr) = self.inner.get_ptr_checked() {
             if unsafe { (*ptr).dec() } == 1 {
@@ -205,10 +187,7 @@ where
     }
 }
 
-impl<A, S> Debug for Pool<A, S>
-where
-    S: PoolSyncType<A>,
-{
+impl<A> Debug for Pool<A> {
     /// Debug implementation for `Pool`.
     ///
     /// # Examples
@@ -231,21 +210,13 @@ where
     }
 }
 
-#[doc(hidden)]
-#[allow(missing_debug_implementations)]
-pub struct PoolInner<A, S>
-where
-    S: PoolSyncType<A>,
-{
-    count: S::Counter,
+pub(crate) struct PoolInner<A> {
+    count: usize,
     max_size: usize,
-    stack: S::Stack,
+    stack: Vec<ElementPointer<A>>,
 }
 
-impl<A, S> PoolInner<A, S>
-where
-    S: PoolSyncType<A>,
-{
+impl<A> PoolInner<A> {
     fn new(max_size: usize) -> Self {
         Self {
             count: Default::default(),
@@ -254,17 +225,17 @@ where
         }
     }
 
-    fn into_ref(mut self: Box<Self>) -> Pool<A, S> {
+    fn into_ref(mut self: Box<Self>) -> Pool<A> {
         self.inc();
         Pool {
-            inner: S::PoolPointer::wrap(Box::into_raw(self)),
+            inner: PoolPointer::wrap(Box::into_raw(self)),
         }
     }
 
-    fn make_ref(&mut self) -> Pool<A, S> {
+    fn make_ref(&mut self) -> Pool<A> {
         self.inc();
         Pool {
-            inner: S::PoolPointer::wrap(self),
+            inner: PoolPointer::wrap(self),
         }
     }
 
@@ -288,30 +259,27 @@ where
         self.count.dec()
     }
 
-    fn pop(&mut self) -> Option<Box<MaybeUninit<RefBox<A, S>>>> {
+    fn pop(&mut self) -> Option<Box<MaybeUninit<RefBox<A>>>> {
         self.stack.stack_pop().map(|value_ptr| {
-            let box_ptr = value_ptr.cast::<MaybeUninit<RefBox<A, S>>>();
-            unsafe { Box::from_raw(box_ptr) }
+            let box_ptr = value_ptr.cast::<MaybeUninit<RefBox<A>>>();
+            unsafe { Box::from_raw(box_ptr.as_ptr()) }
         })
     }
 
-    fn push(&mut self, handle: S::ElementPointer) {
+    fn push(&mut self, handle: ElementPointer<A>) {
         self.stack.stack_push(handle);
     }
 }
 
-impl<A, S> Drop for PoolInner<A, S>
-where
-    S: PoolSyncType<A>,
-{
+impl<A> Drop for PoolInner<A> {
     fn drop(&mut self) {
         while let Some(chunk) = self.stack.stack_pop() {
             unsafe {
                 std::alloc::dealloc(
-                    chunk.cast(),
+                    chunk.as_ptr().cast(),
                     std::alloc::Layout::from_size_align_unchecked(
-                        std::mem::size_of::<RefBox<A, S>>(),
-                        std::mem::align_of::<RefBox<A, S>>(),
+                        std::mem::size_of::<RefBox<A>>(),
+                        std::mem::align_of::<RefBox<A>>(),
                     ),
                 );
             }

@@ -150,44 +150,11 @@ mod pointer;
 mod pool;
 mod stack;
 mod std_types;
-mod sync_type;
+mod types;
 
 pub use self::handle::PoolRef;
 pub use self::pool::Pool;
 pub use self::std_types::PoolDefaultImpl;
-pub use self::sync_type::{PoolSyncType, PoolUnsync};
-
-#[cfg(feature = "sync")]
-pub use self::sync_type::PoolSync;
-
-/// Type aliases for thread safe pools.
-#[cfg(feature = "sync")]
-pub mod sync {
-    use crate::sync_type::PoolSync;
-
-    /// A thread safe pool type.
-    pub type Pool<A> = crate::Pool<A, PoolSync>;
-    /// A thread safe reference counter type.
-    ///
-    /// This is the pooled equivalent to [`std::sync::Arc`][Arc].
-    ///
-    /// [Arc]: https://doc.rust-lang.org/std/sync/struct.Arc.html
-    pub type PoolRef<A> = crate::PoolRef<A, PoolSync>;
-}
-
-/// Type aliases for non-thread safe pools.
-pub mod unsync {
-    use crate::sync_type::PoolUnsync;
-
-    /// A non-thread safe pool type.
-    pub type Pool<A> = crate::Pool<A, PoolUnsync>;
-    /// A non-thread safe reference counter type.
-    ///
-    /// This is the pooled equivalent to [`std::rc::Rc`][Rc].
-    ///
-    /// [Rc]: https://doc.rust-lang.org/std/rc/struct.Rc.html
-    pub type PoolRef<A> = crate::PoolRef<A, PoolUnsync>;
-}
 
 /// A trait for initialising a `MaybeUninit<Self>` to a default value.
 pub trait PoolDefault: Default {
@@ -326,26 +293,9 @@ mod test {
     fn option_of_ref_size_equals_ref_size() {
         use std::mem::size_of;
         assert_eq!(
-            size_of::<PoolRef<usize, PoolUnsync>>(),
-            size_of::<Option<PoolRef<usize, PoolUnsync>>>()
+            size_of::<PoolRef<usize>>(),
+            size_of::<Option<PoolRef<usize>>>()
         );
-        assert_eq!(
-            size_of::<Pool<usize, PoolUnsync>>(),
-            size_of::<Option<Pool<usize, PoolUnsync>>>()
-        );
-    }
-
-    #[cfg(feature = "sync")]
-    #[test]
-    fn option_sync_ref_size() {
-        use std::mem::size_of;
-        assert_eq!(
-            size_of::<PoolRef<usize, PoolSync>>(),
-            size_of::<Option<PoolRef<usize, PoolSync>>>()
-        );
-        assert_eq!(
-            size_of::<Pool<usize, PoolSync>>(),
-            size_of::<Option<Pool<usize, PoolSync>>>()
-        );
+        assert_eq!(size_of::<Pool<usize>>(), size_of::<Option<Pool<usize>>>());
     }
 }
