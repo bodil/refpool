@@ -6,8 +6,8 @@ use std::fmt::{Debug, Error, Formatter};
 use std::mem::MaybeUninit;
 
 use crate::counter::Counter;
-use crate::handle::RefBox;
 use crate::pointer::Pointer;
+use crate::refbox::RefBox;
 use crate::stack::Stack;
 use crate::types::{ElementPointer, PoolPointer};
 

@@ -11,13 +11,14 @@
     missing_doc_code_examples
 )]
 
-//! A reimplementation of [`std::rc::Rc`][Rc] which uses a pool of reusable
-//! memory to speed up reallocation.
+//! A reimplementation of [`std::boxed::Box`][Box] and [`std::rc::Rc`][Rc]
+//! which uses a pool of reusable memory to speed up reallocation.
 //!
 //! # Prerequisites
 //!
 //! In order to initialise a type to its default value from the memory pool
-//! using [`PoolRef::default()`][PoolRef::default], it needs to implement
+//! using [`PoolBox::default()`][PoolBox::default] or
+//! [`PoolRef::default()`][PoolRef::default], it needs to implement
 //! [`PoolDefault`][PoolDefault].
 //!
 //! If you want to be able to use [`PoolRef::make_mut()`][PoolRef::make_mut], it
@@ -46,10 +47,10 @@
 //! last [`PoolRef`][PoolRef] referencing the value is dropped, its allocated
 //! memory is returned to the pool.
 //!
-//! # Differences from [`Rc`][Rc] and [`Arc`][Arc]
+//! # Differences from [`Box`][Box] and [`Rc`][Rc]
 //!
-//! [`PoolRef`][PoolRef] is API compatible with [`Rc`][Rc], with the following
-//! exceptions:
+//! [`PoolBox`][PoolBox] is API compatible with [`Box`][Box] and [`PoolRef`][PoolRef]
+//! with [`Rc`][Rc], with the following exceptions:
 //!
 //!   * Types handled by the pool must be [`Sized`][Sized]. This means the pool
 //!     won't accept trait objects, ie. no `Pool<dyn A>`.
@@ -57,38 +58,34 @@
 //!     different: instead of [`Rc::new(value)`][Rc::new], you have
 //!     [`PoolRef::default(pool)`][PoolRef::default] to construct a default
 //!     value and [`PoolRef::new(pool, value)`][PoolRef::new] as the equivalent
-//!     of [`Rc::new(value)`][Rc::new].
-//!   * It does not implement [`Default`][Default], because you need a
+//!     of [`Rc::new(value)`][Rc::new]. Likewise for [`PoolBox`][PoolBox].
+//!   * [`PoolBox`][PoolBox] and [`PoolRef`][PoolRef] do not implement
+//!     [`Default`][Default], because you need a
 //!     [`Pool`][Pool] argument to construct an instance. Use
 //!     [`PoolRef::default(pool)`][PoolRef::default].
-//!   * There's currently no equivalent to [`Weak`][Weak].
+//!   * [`PoolBox`][PoolBox] does not currently implement equivalents of
+//!     [`Box::from_raw`][Box::from_raw] and [`Box::into_raw`][Box::into_raw].
+//!   * There's currently no equivalent to [`Weak`][Weak] for [`PoolRef`][PoolRef].
 //!   * Experimental APIs are not implemented.
 //!
 //! # Thread Safety
 //!
-//! [`Pool`][Pool] defaults to being thread local by default, ie. it does not
+//! [`Pool`][Pool] is strictly thread local, ie. it does not
 //! implement [`Sync`][Sync] and it will fail in appalling ways if you still
-//! somehow manage to access it from two different threads. There's a marker
-//! type [`PoolSync`][PoolSync], available behind the `sync` feature flag, which
-//! you can pass as a second type argument to [`Pool`][Pool] and
-//! [`PoolRef`][PoolRef], for a thread safe version. However, this will be much
-//! less performant, on some platforms even failing to outperform the system
-//! allocator by a significant margin. It's not recommended that you use pools
-//! for thread safe code unless your benchmarks actually show that you gain from
-//! doing so.
-//!
-//! There are also type aliases for the thread safe version available in the
-//! `refpool::sync` namespace, if you have the `sync` feature flag enabled:
-//! `refpool::sync::Pool<A>` and `refpool::sync::PoolRef<A>`.
+//! somehow manage to access it from two different threads. There is no
+//! equivalent of [`Arc`][Arc] because adding thread safety to the pool turns
+//! out to degrade performance sufficiently that the pool is no longer providing
+//! a significant performance benefit even with the slowest system allocators
+//! you're likely to come across in the wild (by which I mean Windows).
 //!
 //! # Performance
 //!
 //! You can expect [`Pool`][Pool] to always outperform the system allocator,
 //! though the performance gains will vary between platforms. Preliminary
 //! benchmarks show it's approximately twice as fast on Linux, and 5-6 times as
-//! fast on Windows. The [`PoolSync`][PoolSync] version is marginally faster on
-//! Windows, but about 3 times slower on Linux, hence the recommendation above
-//! that you don't use it without benchmarks to back your use case.
+//! fast on Windows. Custom allocators like jemalloc may yield even less
+//! benefit, but it's very unlikely you'll find an allocator that can outperform
+//! the pool.
 //!
 //! You can expect bigger performance gains from data types with beneficial
 //! [`PoolDefault`][PoolDefault] and [`PoolClone`][PoolClone] implementations,
@@ -124,6 +121,8 @@
 //! ```
 
 //! [Pool]: struct.Pool.html
+//! [PoolBox]: struct.PoolBox.html
+//! [PoolBox::default]: struct.PoolBox.html#method.default
 //! [PoolRef]: struct.PoolRef.html
 //! [PoolRef::new]: struct.PoolRef.html#method.new
 //! [PoolRef::default]: struct.PoolRef.html#method.default
@@ -132,6 +131,9 @@
 //! [PoolClone]: trait.PoolClone.html
 //! [PoolDefaultImpl]: trait.PoolDefaultImpl.html
 //! [PoolSync]: struct.PoolSync.html
+//! [Box]: https://doc.rust-lang.org/stable/std/boxed/struct.Box.html
+//! [Box::from_raw]: https://doc.rust-lang.org/stable/std/boxed/struct.Box.html#method.from_raw
+//! [Box::into_raw]: https://doc.rust-lang.org/stable/std/boxed/struct.Box.html#method.into_raw
 //! [Default]: https://doc.rust-lang.org/std/default/trait.Default.html
 //! [Clone]: https://doc.rust-lang.org/std/clone/trait.Clone.html
 //! [Arc]: https://doc.rust-lang.org/std/sync/struct.Arc.html
@@ -144,16 +146,19 @@
 
 use std::mem::MaybeUninit;
 
+mod box_handle;
 mod counter;
-mod handle;
 mod pointer;
 mod pool;
+mod ref_handle;
+mod refbox;
 mod stack;
 mod std_types;
 mod types;
 
-pub use self::handle::PoolRef;
+pub use self::box_handle::PoolBox;
 pub use self::pool::Pool;
+pub use self::ref_handle::PoolRef;
 pub use self::std_types::PoolDefaultImpl;
 
 /// A trait for initialising a `MaybeUninit<Self>` to a default value.
