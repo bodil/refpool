@@ -1,6 +1,6 @@
 # refpool
 
-A reimplementation of Rust's `std::rc::Rc` which uses a pool of reusable memory
+A reimplementation of Rust's `std::boxed::Box` and `std::rc::Rc` which uses a pool of reusable memory
 to speed up reallocation.
 
 ## Is It Fast?
