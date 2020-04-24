@@ -155,7 +155,7 @@ impl<A> PoolRef<A> {
     /// # use refpool::{Pool, PoolRef};
     /// let pool: Pool<usize> = Pool::new(256);
     /// let mut number = PoolRef::new(&pool, 1337);
-    /// let other_number = number.cloned(&pool);
+    /// let other_number = PoolRef::cloned(&pool, &number);
     /// *PoolRef::make_mut(&pool, &mut number) = 123;
     /// assert_eq!(123, *number);
     /// assert_eq!(1337, *other_number);
@@ -163,13 +163,13 @@ impl<A> PoolRef<A> {
     ///
     /// [new]: #method.new
     /// [clone_uninit]: trait.PoolClone.html#tymethod.clone_uninit
-    pub fn cloned(&self, pool: &Pool<A>) -> Self
+    pub fn cloned(pool: &Pool<A>, this: &Self) -> Self
     where
         A: PoolClone,
     {
         let mut handle = pool.pop();
         unsafe {
-            self.clone_uninit(data_ptr(&mut handle));
+            this.deref().clone_uninit(data_ptr(&mut handle));
             assume_init(handle)
         }
         .into_ref()

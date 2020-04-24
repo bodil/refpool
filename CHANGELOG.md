@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### CHANGED
+
+-   `PoolRef::cloned` has been made an associated function, to avoid conflicts with wrapped methods.
+    Where you'd previously do `poolref.cloned(pool)` you'll now have to do
+    `PoolRef::cloned(pool, poolref)`.
+
 ### ADDED
 
 -   There's now a feature flag `default_impl` which removes the `PoolDefaultImpl` trait and instead
