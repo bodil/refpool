@@ -54,8 +54,6 @@
 //!     [`Default`][Default], because you need a
 //!     [`Pool`][Pool] argument to construct an instance. Use
 //!     [`PoolRef::default(pool)`][PoolRef::default].
-//!   * [`PoolBox`][PoolBox] does not currently implement equivalents of
-//!     [`Box::from_raw`][Box::from_raw] and [`Box::into_raw`][Box::into_raw].
 //!   * There's currently no equivalent to [`Weak`][Weak] for [`PoolRef`][PoolRef].
 //!   * Experimental APIs are not implemented.
 //!

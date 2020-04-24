@@ -19,6 +19,7 @@ use std::fmt::Formatter;
 use std::hash::Hash;
 use std::hash::Hasher;
 use std::ops::DerefMut;
+use std::ptr::NonNull;
 use std::{ops::Deref, pin::Pin};
 
 /// A unique pointer to a pool allocated value of `A`.
@@ -160,6 +161,62 @@ impl<A> PoolBox<A> {
     /// ```
     pub fn ptr_eq(left: &Self, right: &Self) -> bool {
         std::ptr::eq(left.handle.get_ptr(), right.handle.get_ptr())
+    }
+
+    /// Consume the `PoolBox` and return a pointer to the contents.
+    ///
+    /// Please note that the only proper way to drop the value pointed to
+    /// is by using `PoolBox::from_raw` to turn it back into a `PoolBox`, because
+    /// the value is followed by `PoolBox` metadata which also needs to
+    /// be dropped.
+    pub fn into_raw_non_null(b: PoolBox<A>) -> NonNull<A> {
+        let ptr = b.handle.cast();
+        std::mem::forget(b);
+        ptr
+    }
+
+    /// Consume the `PoolBox` and return a pointer to the contents.
+    ///
+    /// The pointer is guaranteed to be non-null.
+    ///
+    /// Please note that the only proper way to drop the value pointed to
+    /// is by using `PoolBox::from_raw` to turn it back into a `PoolBox`, because
+    /// the value is followed by `PoolBox` metadata which also needs to
+    /// be dropped.
+    pub fn into_raw(b: PoolBox<A>) -> *mut A {
+        Self::into_raw_non_null(b).as_ptr()
+    }
+
+    /// Turn a raw pointer back into a `PoolBox`.
+    ///
+    /// The pointer must be non-null and obtained from a previous call to
+    /// `PoolBox::into_raw` or `PoolBox::into_raw_non_null`.
+    ///
+    /// # Safety
+    ///
+    /// This must *only* be called on pointers obtained through `PoolBox::into_raw`.
+    /// It's not OK to call it on a pointer to a value of `A` you've allocated
+    /// yourself.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use refpool::{Pool, PoolBox};
+    /// let pool: Pool<usize> = Pool::new(1);
+    /// let ref1 = PoolBox::new(&pool, 31337);
+    ///
+    /// // Turn the PoolBox into a raw pointer and see if it still works.
+    /// let ptr = PoolBox::into_raw(ref1);
+    /// assert_eq!(31337, unsafe { *ptr });
+    ///
+    /// // Turn it back into a PoolBox and see, again, if it still works.
+    /// let ref2 = unsafe { PoolBox::from_raw(ptr) };
+    /// assert_eq!(31337, *ref2);
+    /// ```
+    pub unsafe fn from_raw(ptr: *mut A) -> Self {
+        Self {
+            handle: ElementPointer::wrap(ptr.cast()),
+        }
     }
 
     fn box_ref(&self) -> &RefBox<A> {

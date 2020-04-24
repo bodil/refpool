@@ -23,10 +23,11 @@ pub(crate) unsafe fn data_ptr<A>(this: &mut MaybeUninit<RefBox<A>>) -> &mut Mayb
         .unwrap()
 }
 
+#[repr(C)]
 pub(crate) struct RefBox<A> {
+    pub(crate) value: A,
     pub(crate) count: usize,
     pub(crate) pool: Pool<A>,
-    pub(crate) value: A,
 }
 
 impl<A> RefBox<A> {

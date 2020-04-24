@@ -8,6 +8,7 @@ use std::fmt::{Debug, Display, Error, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::pin::Pin;
+use std::ptr::NonNull;
 
 use crate::counter::Counter;
 use crate::pointer::Pointer;
@@ -332,6 +333,62 @@ impl<A> PoolRef<A> {
     /// ```
     pub fn strong_count(this: &Self) -> usize {
         this.box_ref().count.count()
+    }
+
+    /// Consume the `PoolRef` and return a pointer to the contents.
+    ///
+    /// Please note that the only proper way to drop the value pointed to
+    /// is by using `PoolRef::from_raw` to turn it back into a `PoolRef`, because
+    /// the value is followed by `PoolRef` metadata which also needs to
+    /// be dropped.
+    pub fn into_raw_non_null(b: PoolRef<A>) -> NonNull<A> {
+        let ptr = b.handle.cast();
+        std::mem::forget(b);
+        ptr
+    }
+
+    /// Consume the `PoolRef` and return a pointer to the contents.
+    ///
+    /// The pointer is guaranteed to be non-null.
+    ///
+    /// Please note that the only proper way to drop the value pointed to
+    /// is by using `PoolRef::from_raw` to turn it back into a `PoolRef`, because
+    /// the value is followed by `PoolRef` metadata which also needs to
+    /// be dropped.
+    pub fn into_raw(b: PoolRef<A>) -> *mut A {
+        Self::into_raw_non_null(b).as_ptr()
+    }
+
+    /// Turn a raw pointer back into a `PoolRef`.
+    ///
+    /// The pointer must be non-null and obtained from a previous call to
+    /// `PoolRef::into_raw` or `PoolRef::into_raw_non_null`.
+    ///
+    /// # Safety
+    ///
+    /// This must *only* be called on pointers obtained through `PoolRef::into_raw`.
+    /// It's not OK to call it on a pointer to a value of `A` you've allocated
+    /// yourself.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use refpool::{Pool, PoolRef};
+    /// let pool: Pool<usize> = Pool::new(1);
+    /// let ref1 = PoolRef::new(&pool, 31337);
+    ///
+    /// // Turn the PoolRef into a raw pointer and see if it still works.
+    /// let ptr = PoolRef::into_raw(ref1);
+    /// assert_eq!(31337, unsafe { *ptr });
+    ///
+    /// // Turn it back into a PoolRef and see, again, if it still works.
+    /// let ref2 = unsafe { PoolRef::from_raw(ptr) };
+    /// assert_eq!(31337, *ref2);
+    /// ```
+    pub unsafe fn from_raw(ptr: *mut A) -> Self {
+        Self {
+            handle: ElementPointer::wrap(ptr.cast()),
+        }
     }
 
     fn box_ref(&self) -> &RefBox<A> {
