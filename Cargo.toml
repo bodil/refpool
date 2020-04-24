@@ -1,6 +1,6 @@
 [package]
 name = "refpool"
-version = "0.4.1"
+version = "0.4.2"
 authors = ["Bodil Stokke <bodil@bodil.org>"]
 edition = "2018"
 license = "MPL-2.0+"
