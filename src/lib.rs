@@ -190,7 +190,7 @@ pub trait PoolDefault: Default {
 }
 
 /// A trait for cloning a value into a `MaybeUninit<Self>`.
-pub trait PoolClone: PoolDefault + Clone {
+pub trait PoolClone: Clone {
     /// Clone an instance of `Self` into an uninitialised instance of `Self`.
     ///
     /// # Safety
