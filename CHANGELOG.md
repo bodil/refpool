@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/) and this project
 adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### ADDED
+
+-   `PoolClone` now also doesn't erroneously require `Default` when using the `default_impl` flag.
+
 ## [0.4.1] - 2020-04-24
 
 ### ADDED

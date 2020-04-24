@@ -214,7 +214,7 @@ where
 #[cfg(feature = "default_impl")]
 impl<A> PoolClone for A
 where
-    A: Clone + Default,
+    A: Clone,
 {
     default unsafe fn clone_uninit(&self, target: &mut MaybeUninit<Self>) {
         target.as_mut_ptr().write(self.clone());

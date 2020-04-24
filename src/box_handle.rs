@@ -260,7 +260,7 @@ where
     fn clone(&self) -> Self {
         let mut handle = self.box_ref().pool.pop();
         unsafe {
-            self.clone_uninit(data_ptr(&mut handle));
+            self.deref().clone_uninit(data_ptr(&mut handle));
             assume_init(handle)
         }
         .into_box()

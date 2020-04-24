@@ -195,7 +195,7 @@ impl<A> PoolRef<A> {
         if this.box_ref().is_shared() {
             let mut new_handle = pool.pop();
             let mut new_handle = unsafe {
-                this.clone_uninit(data_ptr(&mut new_handle));
+                this.deref().deref().clone_uninit(data_ptr(&mut new_handle));
                 assume_init(new_handle)
             };
             new_handle.inc();
