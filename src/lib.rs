@@ -2,15 +2,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-#![forbid(rust_2018_idioms)]
-#![deny(nonstandard_style)]
-#![warn(
-    unreachable_pub,
-    missing_docs,
-    missing_debug_implementations,
-    missing_doc_code_examples
-)]
-
 //! A reimplementation of [`std::boxed::Box`][Box] and [`std::rc::Rc`][Rc]
 //! which uses a pool of reusable memory to speed up reallocation.
 //!
@@ -119,7 +110,16 @@
 //! // Check that the pool is again empty after we reused the previous memory.
 //! assert_eq!(0, pool.get_pool_size());
 //! ```
-
+//!
+//! # Feature Flags
+//!
+//! There's one feature flag available, `default_impl`, which requires a nightly
+//! rustc because it leans on the `min_specialization` language feature, which
+//! removes the `PoolDefaultImpl` trait and instead provides a `default`
+//! overridable implementation for `PoolClone` and `PoolDefault` for any type
+//! that implements `Clone` and `Default`. `PoolDefaultImpl` is an unfortunate
+//! hack to get around the current absence of specialisation in stable rustc.
+//!
 //! [Pool]: struct.Pool.html
 //! [PoolBox]: struct.PoolBox.html
 //! [PoolBox::default]: struct.PoolBox.html#method.default
@@ -144,6 +144,16 @@
 //! [Sync]: https://doc.rust-lang.org/std/marker/trait.Sync.html
 //! [Chunk]: https://docs.rs/sized-chunks/*/sized_chunks/sized_chunk/struct.Chunk.html
 
+#![forbid(rust_2018_idioms)]
+#![deny(nonstandard_style)]
+#![warn(
+    unreachable_pub,
+    missing_docs,
+    missing_debug_implementations,
+    missing_doc_code_examples
+)]
+#![cfg_attr(feature = "default_impl", feature(min_specialization))]
+
 use std::mem::MaybeUninit;
 
 mod box_handle;
@@ -153,12 +163,15 @@ mod pool;
 mod ref_handle;
 mod refbox;
 mod stack;
-mod std_types;
 mod types;
 
 pub use self::box_handle::PoolBox;
 pub use self::pool::Pool;
 pub use self::ref_handle::PoolRef;
+
+#[cfg(not(feature = "default_impl"))]
+mod std_types;
+#[cfg(not(feature = "default_impl"))]
 pub use self::std_types::PoolDefaultImpl;
 
 /// A trait for initialising a `MaybeUninit<Self>` to a default value.
@@ -186,6 +199,26 @@ pub trait PoolClone: PoolDefault + Clone {
     /// uninitialised memory, and you must leave it in a fully initialised
     /// state, as expected by `MaybeUninit::assume_init()`.
     unsafe fn clone_uninit(&self, target: &mut MaybeUninit<Self>);
+}
+
+#[cfg(feature = "default_impl")]
+impl<A> PoolDefault for A
+where
+    A: Default,
+{
+    default unsafe fn default_uninit(target: &mut MaybeUninit<Self>) {
+        target.as_mut_ptr().write(Default::default());
+    }
+}
+
+#[cfg(feature = "default_impl")]
+impl<A> PoolClone for A
+where
+    A: Clone + Default,
+{
+    default unsafe fn clone_uninit(&self, target: &mut MaybeUninit<Self>) {
+        target.as_mut_ptr().write(self.clone());
+    }
 }
 
 #[cfg(test)]

@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/) and this project
 adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### ADDED
+
+-   There's now a feature flag `default_impl` which removes the `PoolDefaultImpl` trait and instead
+    uses specialisation (specifically the `min_specialization` language feature) to provide default
+    implementations for `PoolClone` and `PoolDefault` for any type implementing `Clone` and
+    `Default`. As this needs an unstable language feature to be enabled, it will only work on
+    nightly rustc.
+-   `PoolBox` and `PoolRef` now have `into_raw`, `into_raw_non_null` and `from_raw` functions, which
+    work similarly to their `Box` and `Rc` counterparts. To accommodate this, the memory layout of
+    the internal `RefBox` structure has changed, so that the pointer stored in a `PoolBox` or
+    `PoolRef` is now guaranteed to point at the boxed value.
+
 ## [0.3.1] - 2020-04-23
 
 ### ADDED
