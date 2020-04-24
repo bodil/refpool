@@ -8,7 +8,6 @@ use std::fmt::{Debug, Display, Error, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::pin::Pin;
-use std::ptr::NonNull;
 
 use crate::counter::Counter;
 use crate::pointer::Pointer;
@@ -337,26 +336,16 @@ impl<A> PoolRef<A> {
 
     /// Consume the `PoolRef` and return a pointer to the contents.
     ///
-    /// Please note that the only proper way to drop the value pointed to
-    /// is by using `PoolRef::from_raw` to turn it back into a `PoolRef`, because
-    /// the value is followed by `PoolRef` metadata which also needs to
-    /// be dropped.
-    pub fn into_raw_non_null(b: PoolRef<A>) -> NonNull<A> {
-        let ptr = b.handle.cast();
-        std::mem::forget(b);
-        ptr
-    }
-
-    /// Consume the `PoolRef` and return a pointer to the contents.
-    ///
     /// The pointer is guaranteed to be non-null.
     ///
     /// Please note that the only proper way to drop the value pointed to
     /// is by using `PoolRef::from_raw` to turn it back into a `PoolRef`, because
     /// the value is followed by `PoolRef` metadata which also needs to
     /// be dropped.
-    pub fn into_raw(b: PoolRef<A>) -> *mut A {
-        Self::into_raw_non_null(b).as_ptr()
+    pub fn into_raw(b: PoolRef<A>) -> *const A {
+        let ptr = b.handle.cast();
+        std::mem::forget(b);
+        ptr.as_ptr()
     }
 
     /// Turn a raw pointer back into a `PoolRef`.
@@ -385,9 +374,9 @@ impl<A> PoolRef<A> {
     /// let ref2 = unsafe { PoolRef::from_raw(ptr) };
     /// assert_eq!(31337, *ref2);
     /// ```
-    pub unsafe fn from_raw(ptr: *mut A) -> Self {
+    pub unsafe fn from_raw(ptr: *const A) -> Self {
         Self {
-            handle: ElementPointer::wrap(ptr.cast()),
+            handle: ElementPointer::wrap((ptr as *mut A).cast()),
         }
     }
 

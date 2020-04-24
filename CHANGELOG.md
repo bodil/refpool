@@ -20,10 +20,10 @@ adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
     implementations for `PoolClone` and `PoolDefault` for any type implementing `Clone` and
     `Default`. As this needs an unstable language feature to be enabled, it will only work on
     nightly rustc.
--   `PoolBox` and `PoolRef` now have `into_raw`, `into_raw_non_null` and `from_raw` functions, which
-    work similarly to their `Box` and `Rc` counterparts. To accommodate this, the memory layout of
-    the internal `RefBox` structure has changed, so that the pointer stored in a `PoolBox` or
-    `PoolRef` is now guaranteed to point at the boxed value.
+-   `PoolBox` and `PoolRef` now have `into_raw` and `from_raw` functions, plus `into_raw_non_null`
+    for `PoolBox`, which work similarly to their `Box` and `Rc` counterparts. To accommodate this,
+    the memory layout of the internal `RefBox` structure has changed, so that the pointer stored in
+    a `PoolBox` or `PoolRef` is now guaranteed to point at the boxed value.
 
 ## [0.3.1] - 2020-04-23
 
