@@ -24,6 +24,10 @@ adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
     for `PoolBox`, which work similarly to their `Box` and `Rc` counterparts. To accommodate this,
     the memory layout of the internal `RefBox` structure has changed, so that the pointer stored in
     a `PoolBox` or `PoolRef` is now guaranteed to point at the boxed value.
+-   There is now a `refpool::fakepool` module which provides fake versions of `Pool`, `PoolBox` and
+    `PoolRef`, the latter two being zero cost wrappers around `Box` and `Rc`, and `Pool` being a
+    zero sized structure that will optimise away entirely, for situations where you may want to only
+    optionally use the pool but want to write the same code for both situations.
 
 ## [0.3.1] - 2020-04-23
 

@@ -22,7 +22,6 @@ default_impl = []
 [[bench]]
 name = "pool"
 harness = false
-features = ["default_impl"]
 
 [dev-dependencies]
 criterion = "0.3.0"

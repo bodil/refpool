@@ -163,6 +163,8 @@ mod refbox;
 mod stack;
 mod types;
 
+pub mod fakepool;
+
 pub use self::box_handle::PoolBox;
 pub use self::pool::Pool;
 pub use self::ref_handle::PoolRef;
