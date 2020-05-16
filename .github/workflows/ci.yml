@@ -6,42 +6,88 @@ on:
         - cron: "0 0 1,15 * *"
 
 jobs:
+    check:
+        name: Check
+        runs-on: ubuntu-latest
+        strategy:
+            matrix:
+                rust:
+                    - stable
+                    - nightly
+                    - 1.43.0 # lowest supported version
+        steps:
+            - uses: actions/checkout@v2
+            - uses: actions-rs/toolchain@v1
+              with:
+                  profile: minimal
+                  toolchain: ${{ matrix.rust }}
+                  override: true
+            - uses: actions-rs/cargo@v1
+              with:
+                  command: check
+
     test:
-        runs-on: ${{ matrix.os }}
+        name: Tests
+        runs-on: ubuntu-latest
         strategy:
             matrix:
-                os: [ubuntu-latest, windows-latest, macOS-latest]
-                rust: [stable, beta, nightly]
-
+                rust:
+                    - stable
+                    - 1.43.0 # lowest supported version
         steps:
-            - uses: hecrj/setup-rust-action@v1
+            - uses: actions/checkout@v2
+            - uses: actions-rs/toolchain@v1
               with:
-                  rust-version: ${{ matrix.rust }}
-            - uses: actions/checkout@v1
-            - name: Run tests
-              run: cargo test
-
-    test-nigthly:
-        runs-on: ${{ matrix.os }}
-        strategy:
-            matrix:
-                os: [ubuntu-latest, windows-latest, macOS-latest]
-
-        steps:
-            - uses: hecrj/setup-rust-action@v1
+                  profile: minimal
+                  toolchain: ${{ matrix.rust }}
+                  override: true
+            - uses: actions-rs/cargo@v1
               with:
-                  rust-version: nightly
-            - uses: actions/checkout@v1
-            - name: Run tests
-              run: cargo test --all-features
+                  command: test
 
-    clippy:
+    test-nightly:
+        name: Tests --all-features
         runs-on: ubuntu-latest
         steps:
-            - uses: hecrj/setup-rust-action@v1
+            - uses: actions/checkout@v2
+            - uses: actions-rs/toolchain@v1
               with:
-                  rust-version: nightly
+                  profile: minimal
+                  toolchain: nightly
+                  override: true
+            - uses: actions-rs/cargo@v1
+              with:
+                  command: test
+                  args: --all-features
+
+    fmt:
+        name: Rustfmt
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v2
+            - uses: actions-rs/toolchain@v1
+              with:
+                  profile: minimal
+                  toolchain: stable
+                  override: true
+                  components: rustfmt
+            - uses: actions-rs/cargo@v1
+              with:
+                  command: fmt
+                  args: --all -- --check
+
+    clippy:
+        name: Clippy
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v2
+            - uses: actions-rs/toolchain@v1
+              with:
+                  profile: minimal
+                  toolchain: stable
+                  override: true
                   components: clippy
-            - uses: actions/checkout@v1
-            - name: Clippy
-              run: cargo clippy -- -D warnings
+            - uses: actions-rs/clippy-check@v1
+              with:
+                  name: Clippy-${{ matrix.rust }}
+                  token: ${{ secrets.GITHUB_TOKEN }}
