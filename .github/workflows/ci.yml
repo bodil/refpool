@@ -46,7 +46,7 @@ jobs:
                   command: test
 
     test-nightly:
-        name: Tests --all-features
+        name: Tests --all-features (nightly)
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v2
