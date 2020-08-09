@@ -129,6 +129,32 @@ impl<A> Pool<A> {
         }
     }
 
+    /// Fill the pool and return it.
+    ///
+    /// This is a convenience function that calls [`fill()`][fill] on
+    /// the pool, so that you can construct a pool with a one liner:
+    ///
+    /// ```rust
+    /// # use refpool::Pool;
+    /// let pool: Pool<u64> = Pool::new(1024).filled();
+    /// assert!(pool.is_full());
+    /// ```
+    ///
+    /// This is functionally equivalent to, but terser than:
+    ///
+    /// ```rust
+    /// # use refpool::Pool;
+    /// let mut pool: Pool<u64> = Pool::new(1024);
+    /// pool.fill();
+    /// assert!(pool.is_full());
+    /// ```
+    ///
+    /// [fill]: #method.fill
+    pub fn filled(self) -> Self {
+        self.fill();
+        self
+    }
+
     /// Convert a pool handle for type `A` into a handle for type `B`.
     ///
     /// The types `A` and `B` must have the same size and alignment, as
