@@ -161,6 +161,7 @@ mod pool;
 mod ref_handle;
 mod refbox;
 mod stack;
+mod sync_stack;
 mod types;
 
 pub mod fakepool;

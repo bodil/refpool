@@ -8,7 +8,7 @@ use criterion::{
     black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput,
 };
 
-use refpool::{Pool, PoolDefault, PoolRef};
+use refpool::{Pool, PoolDefault, PoolDefaultImpl, PoolRef};
 
 const SIZES: &[usize] = &[1024, 2048, 4096, 8192, 16384, 32768, 65536, 131_072];
 
@@ -19,6 +19,8 @@ impl Default for BigLumpOfUsize {
         Self([0; 1024])
     }
 }
+
+impl PoolDefaultImpl for BigLumpOfUsize {}
 
 pub fn alloc<A: PoolDefault, P: Default>(name: &str, c: &mut Criterion) {
     let mut group = c.benchmark_group(name);
@@ -96,7 +98,7 @@ fn alloc_usize(c: &mut Criterion) {
 }
 
 fn realloc_usize(c: &mut Criterion) {
-    realloc::<usize, Rc<usize>>("realloc/size", c)
+    realloc::<usize, Rc<usize>>("realloc/usize", c)
 }
 
 fn alloc_1024x_usize(c: &mut Criterion) {
