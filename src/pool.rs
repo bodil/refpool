@@ -182,7 +182,7 @@ impl<A> Pool<A> {
     /// [align_of]: https://doc.rust-lang.org/std/mem/fn.align_of.html
     pub fn cast<B>(&self) -> Pool<B> {
         assert!(std::mem::size_of::<A>() == std::mem::size_of::<B>());
-        assert!(std::mem::align_of::<A>() == std::mem::align_of::<B>());
+        assert!(std::mem::align_of::<A>() >= std::mem::align_of::<B>());
 
         if let Some(ptr) = self.inner.get_ptr_checked() {
             let inner: *mut PoolInner<B> = ptr.cast();
